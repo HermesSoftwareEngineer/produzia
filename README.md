@@ -15,8 +15,59 @@ React + Vite (frontend/) ──> API Flask (app/) ──┬──> API do Trello
   atividade por dia, horário da atividade, tabela por pessoa e situação de cada quadro.
 - **Resumo do dia**: escolha a data (setas ou ← → no teclado). Por pessoa: itens de checklist
   concluídos e pendentes, cards concluídos e pendentes, comentários, cards criados e movimentações.
+- **Processos**: mapeamento de processos por quadro, com documento em Markdown (tabelas, listas de
+  tarefas) e fluxograma em Mermaid (zoom, tela cheia, exportar SVG/PNG). Crie e edite pela página
+  ou por um agente de IA via MCP.
 - **Quadros**: cadastre pelo link ou escolha entre os quadros da conta do Trello, e marque quais
   listas contam como "concluído".
+
+## Servidor MCP
+
+O serviço `produzia-mcp` (pasta `mcp_server/`, SDK oficial `mcp` com FastMCP) expõe o Produzia
+para agentes de IA via **Streamable HTTP** em `https://produzia.olimpo-services.com.br/mcp`.
+Ele chama a API do Produzia pela rede docker (`PRODUZIA_API_URL=http://produzia:5000/api`)
+com o header `X-API-Key: $PRODUZIA_API_KEY`, e exige dos clientes `Authorization: Bearer $MCP_TOKEN`.
+
+Conectar no Claude Code:
+
+```bash
+claude mcp add --transport http produzia https://produzia.olimpo-services.com.br/mcp \
+  --header "Authorization: Bearer <MCP_TOKEN>"
+```
+
+Ferramentas:
+
+| Ferramenta | O que faz |
+|---|---|
+| `listar_quadros` | Quadros cadastrados (id, nome, url) |
+| `listar_processos(quadro_id?)` | Processos (sem o conteúdo), filtrando por quadro |
+| `obter_processo(processo_id)` | Processo completo, com Markdown e Mermaid |
+| `criar_processo(quadro_id, nome, descricao?, categoria?, markdown?, fluxograma_mermaid?)` | Cria; exige markdown ou fluxograma |
+| `atualizar_processo(processo_id, nome?, descricao?, categoria?, quadro_id?, markdown?, fluxograma_mermaid?)` | Atualização parcial (`""` remove o campo) |
+| `excluir_processo(processo_id)` | Exclui |
+| `resumo_do_dia(data?, quadro_ids?)` | Resumo compacto do dia, por pessoa (leitura) |
+| `dashboard(dias?, quadro_ids?)` | KPIs, quadros e ranking do período (leitura) |
+
+O Markdown é GitHub-flavored (HTML bruto não é renderizado). O fluxograma é texto Mermaid sem
+cercas, começando pelo tipo do diagrama (`flowchart TD`, `sequenceDiagram`, `stateDiagram-v2`…).
+
+Rodar localmente: `pip install -r mcp_server/requirements.txt` e
+`PRODUZIA_API_URL=http://127.0.0.1:5000/api PRODUZIA_API_KEY=... MCP_TOKEN=... python mcp_server/server.py`
+(escuta em `:8000/mcp`).
+
+### API de processos
+
+`/api/processos` aceita a sessão do navegador ou `X-API-Key`. A mesma chave também lê
+`GET /api/boards`, `GET /api/resumo` e `GET /api/dashboard`.
+
+- `GET /api/processos?quadro=<id>` → `{processos: [...]}` (sem `markdown`/`fluxograma`)
+- `GET /api/processos/<id>` → processo completo
+- `POST /api/processos` com `{quadroId, nome, descricao?, categoria?, markdown?, fluxograma?}`
+- `PATCH /api/processos/<id>` (ou `PUT`) com qualquer subconjunto dos campos
+- `DELETE /api/processos/<id>`
+
+Limites: nome 120 caracteres, descrição 500, categoria 60, markdown 200 KB, fluxograma 50 KB.
+O campo `atualizadoPor` vale `web` (sessão) ou `mcp` (chave de serviço).
 
 ## Regras de cálculo
 
@@ -48,5 +99,6 @@ cd /opt/produzia && git pull && docker compose up -d --build
 ```
 
 Na primeira vez: `git clone` em `/opt/produzia`, `cp .env.example .env` e preencha.
+Para o MCP, gere `PRODUZIA_API_KEY` e `MCP_TOKEN` (`openssl rand -hex 32` cada) no `.env`.
 O SQLite (quadros cadastrados) fica no volume `produzia-data`. O Traefik publica em
 `https://produzia.olimpo-services.com.br`.

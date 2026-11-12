@@ -1,0 +1,251 @@
+"""Servidor MCP do Produzia (Streamable HTTP em /mcp).
+
+Fala com a API REST do Produzia usando a chave de servico (X-API-Key) e exige dos
+clientes MCP o header "Authorization: Bearer <MCP_TOKEN>".
+"""
+import hmac
+import json
+import os
+from typing import Annotated, Any
+
+import httpx
+from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
+from pydantic import Field
+
+INSTRUCOES = """\
+Produzia é o painel de produtividade dos quadros do Trello da equipe. Aqui você consulta os
+quadros cadastrados, o resumo do dia e o dashboard, e mantém o Mapeamento de Processos:
+cada processo pertence a um quadro e tem um documento em Markdown (GitHub-flavored: títulos,
+listas, tabelas, listas de tarefas "- [ ]") e/ou um fluxograma em Mermaid (ex.: "flowchart TD").
+Use listar_quadros para descobrir o quadro_id antes de criar processos.
+Antes de atualizar, leia o processo com obter_processo para não perder conteúdo."""
+
+DOC_MARKDOWN = (
+    "Documento do processo em Markdown GitHub-flavored (títulos #, listas, tabelas, "
+    "listas de tarefas '- [ ]', blocos de código). HTML bruto não é renderizado. Até 200 KB."
+)
+DOC_MERMAID = (
+    "Fluxograma em sintaxe Mermaid, SEM cercas ```mermaid. A primeira linha declara o tipo, "
+    "de preferência 'flowchart TD' (ou LR). Exemplo:\n"
+    "flowchart TD\n  A[Pedido recebido] --> B{Pagamento aprovado?}\n"
+    "  B -->|Sim| C[Separar estoque]\n  B -->|Não| D[Avisar cliente]\n"
+    "Coloque textos com acentos, parênteses ou dois-pontos entre aspas: A[\"Etapa (1): revisão\"]. "
+    "Também aceita sequenceDiagram, stateDiagram-v2 etc. Até 50 KB."
+)
+
+
+class ProduziaAPI:
+    """Cliente minimo da API REST do Produzia."""
+
+    def __init__(self, base_url, api_key, transport=None):
+        self.client = httpx.AsyncClient(
+            base_url=base_url.rstrip("/"), headers={"X-API-Key": api_key},
+            timeout=httpx.Timeout(120, connect=10), transport=transport,
+        )
+
+    async def request(self, method, path, params=None, body=None):
+        try:
+            resp = await self.client.request(method, path, params=params, json=body)
+        except httpx.HTTPError as exc:
+            raise ToolError(f"Não consegui falar com o Produzia ({type(exc).__name__}).") from exc
+        if resp.status_code == 204:
+            return None
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {}
+        if resp.status_code >= 400:
+            message = data.get("erro") if isinstance(data, dict) else None
+            raise ToolError(message or f"O Produzia respondeu {resp.status_code}.")
+        return data
+
+
+def _quadros_param(quadro_ids):
+    return {"quadros": ",".join(quadro_ids)} if quadro_ids else {}
+
+
+def _card(c):
+    card = c.get("card") or {}
+    return card.get("nome") or ""
+
+
+def compact_resumo(data, limite=10):
+    pessoas = []
+    for p in data.get("pessoas", []):
+        t = p["totais"]
+        if not p.get("atividade") and not t["itensPendentes"] and not t["cardsPendentes"]:
+            continue
+        atrasados = [i for i in p["itensPendentes"] if i.get("status") == "atrasado"]
+        pessoas.append({
+            "nome": p["pessoa"]["nome"],
+            "totais": t,
+            "itensConcluidos": [f"{i['texto']} ({_card(i)})" for i in p["itensConcluidos"][:limite]],
+            "cardsConcluidos": [_card(c) for c in p["cardsConcluidos"][:limite]],
+            "itensAtrasados": [
+                f"{i['texto']} ({_card(i)}, prazo {i.get('dataFim') or '?'})" for i in atrasados[:limite]
+            ],
+            "comentarios": [f"{_card(c)}: {c['texto'][:160]}" for c in p["comentarios"][:limite]],
+        })
+    return {"data": data.get("data"), "totais": data.get("totais"), "pessoas": pessoas,
+            "avisos": data.get("avisos", [])}
+
+
+def compact_dashboard(data, limite=15):
+    keys = ("cardsConcluidos", "itensConcluidos", "comentarios", "cardsCriados",
+            "itensPendentes", "itensAtrasados", "cardsPendentes", "cardsAtrasados")
+    return {
+        "inicio": data.get("inicio"), "fim": data.get("fim"), "dias": data.get("dias"),
+        "kpis": data.get("kpis"),
+        "quadros": [
+            {k: b[k] for k in ("id", "nome", "cardsAbertos", "cardsAtrasados", "cardsConcluidos",
+                                 "comentarios", "itensFeitos", "itensTotal", "itensAtrasados")}
+            for b in data.get("quadros", [])
+        ],
+        "ranking": [{"nome": r["pessoa"]["nome"], **{k: r[k] for k in keys}}
+                    for r in data.get("ranking", [])[:limite]],
+        "avisos": data.get("avisos", []),
+    }
+
+
+def build_server(api: ProduziaAPI, **settings) -> FastMCP:
+    mcp = FastMCP("produzia", instructions=INSTRUCOES, **settings)
+
+    @mcp.tool(description="Lista os quadros do Trello cadastrados no Produzia (id e nome). "
+                          "Use o id como quadro_id nas outras ferramentas.")
+    async def listar_quadros() -> dict:
+        data = await api.request("GET", "/boards")
+        return {"quadros": [{"id": b["id"], "nome": b["nome"], "url": b["url"]} for b in data["quadros"]]}
+
+    @mcp.tool(description="Lista os processos mapeados (sem o conteúdo), agrupáveis por categoria. "
+                          "Informe quadro_id para filtrar por quadro. Use obter_processo para ler o conteúdo.")
+    async def listar_processos(
+        quadro_id: Annotated[str | None, Field(description="ID do quadro (de listar_quadros). Vazio = todos.")] = None,
+    ) -> dict:
+        params = {"quadro": quadro_id} if quadro_id else None
+        return await api.request("GET", "/processos", params=params)
+
+    @mcp.tool(description="Retorna um processo completo: nome, descrição, categoria, quadro, "
+                          "documento Markdown e fluxograma Mermaid.")
+    async def obter_processo(
+        processo_id: Annotated[str, Field(description="ID do processo (de listar_processos).")],
+    ) -> dict:
+        return await api.request("GET", f"/processos/{processo_id}")
+
+    @mcp.tool(description="Cria um processo num quadro. Informe pelo menos um entre markdown "
+                          "(documento GitHub-flavored) e fluxograma_mermaid (ex.: 'flowchart TD'). "
+                          "Retorna o processo criado com o id.")
+    async def criar_processo(
+        quadro_id: Annotated[str, Field(description="ID do quadro (de listar_quadros).")],
+        nome: Annotated[str, Field(description="Nome curto do processo (até 120 caracteres).", max_length=120)],
+        descricao: Annotated[str | None, Field(description="Resumo de uma ou duas frases (até 500 caracteres).")] = None,
+        categoria: Annotated[str | None, Field(description="Agrupamento opcional, ex.: 'Comercial', 'Financeiro'.")] = None,
+        markdown: Annotated[str | None, Field(description=DOC_MARKDOWN)] = None,
+        fluxograma_mermaid: Annotated[str | None, Field(description=DOC_MERMAID)] = None,
+    ) -> dict:
+        if not (markdown or "").strip() and not (fluxograma_mermaid or "").strip():
+            raise ToolError("Informe markdown ou fluxograma_mermaid (pelo menos um dos dois).")
+        body = {"quadroId": quadro_id, "nome": nome, "descricao": descricao or "",
+                "categoria": categoria, "markdown": markdown, "fluxograma": fluxograma_mermaid}
+        return await api.request("POST", "/processos", body=body)
+
+    @mcp.tool(description="Atualiza um processo. Só os campos informados mudam; os demais ficam como estão. "
+                          "Envie string vazia em categoria, markdown ou fluxograma_mermaid para remover o campo "
+                          "(o processo precisa manter documento ou fluxograma). Os textos enviados substituem "
+                          "os atuais por inteiro: leia antes com obter_processo.")
+    async def atualizar_processo(
+        processo_id: Annotated[str, Field(description="ID do processo.")],
+        nome: Annotated[str | None, Field(description="Novo nome (até 120 caracteres).", max_length=120)] = None,
+        descricao: Annotated[str | None, Field(description="Novo resumo.")] = None,
+        categoria: Annotated[str | None, Field(description="Nova categoria ('' remove).")] = None,
+        quadro_id: Annotated[str | None, Field(description="Mover para outro quadro cadastrado.")] = None,
+        markdown: Annotated[str | None, Field(description=DOC_MARKDOWN)] = None,
+        fluxograma_mermaid: Annotated[str | None, Field(description=DOC_MERMAID)] = None,
+    ) -> dict:
+        fields = {"nome": nome, "descricao": descricao, "categoria": categoria, "quadroId": quadro_id,
+                  "markdown": markdown, "fluxograma": fluxograma_mermaid}
+        body = {k: v for k, v in fields.items() if v is not None}
+        if not body:
+            raise ToolError("Informe pelo menos um campo para atualizar.")
+        return await api.request("PATCH", f"/processos/{processo_id}", body=body)
+
+    @mcp.tool(description="Exclui um processo definitivamente. Confirme com o usuário antes.")
+    async def excluir_processo(
+        processo_id: Annotated[str, Field(description="ID do processo.")],
+    ) -> dict:
+        await api.request("DELETE", f"/processos/{processo_id}")
+        return {"ok": True, "excluido": processo_id}
+
+    @mcp.tool(description="Resumo compacto de um dia (somente leitura): por pessoa, itens de checklist e "
+                          "cards concluídos, itens atrasados, comentários e totais. Data no fuso do Produzia.")
+    async def resumo_do_dia(
+        data: Annotated[str | None, Field(description="Dia no formato AAAA-MM-DD. Vazio = hoje.")] = None,
+        quadro_ids: Annotated[list[str] | None, Field(description="Filtrar por IDs de quadros. Vazio = todos.")] = None,
+    ) -> dict:
+        params = {**_quadros_param(quadro_ids), **({"data": data} if data else {})}
+        return compact_resumo(await api.request("GET", "/resumo", params=params))
+
+    @mcp.tool(description="Indicadores do período (somente leitura): KPIs com comparação ao período anterior, "
+                          "situação por quadro e ranking por pessoa.")
+    async def dashboard(
+        dias: Annotated[int, Field(description="Tamanho do período em dias (1 a 90).", ge=1, le=90)] = 14,
+        quadro_ids: Annotated[list[str] | None, Field(description="Filtrar por IDs de quadros. Vazio = todos.")] = None,
+    ) -> dict:
+        params = {"dias": dias, **_quadros_param(quadro_ids)}
+        return compact_dashboard(await api.request("GET", "/dashboard", params=params))
+
+    return mcp
+
+
+class BearerAuth:
+    """Middleware ASGI: exige Authorization: Bearer <token>; /health fica livre."""
+
+    def __init__(self, app, token):
+        self.app = app
+        self.token = (token or "").encode()
+
+    def _ok(self, scope):
+        headers = dict(scope.get("headers") or [])
+        auth = headers.get(b"authorization", b"")
+        scheme, _, value = auth.partition(b" ")
+        return bool(self.token) and scheme.lower() == b"bearer" and hmac.compare_digest(value.strip(), self.token)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            if scope["path"] == "/health":
+                return await _json(send, 200, {"status": "ok"})
+            if not self._ok(scope):
+                return await _json(send, 401, {"erro": "Token inválido."},
+                                   [(b"www-authenticate", b'Bearer realm="produzia"')])
+        return await self.app(scope, receive, send)
+
+
+async def _json(send, status, payload, extra=()):
+    body = json.dumps(payload, ensure_ascii=False).encode()
+    headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()), *extra]
+    await send({"type": "http.response.start", "status": status, "headers": headers})
+    await send({"type": "http.response.body", "body": body})
+
+
+def create_app(env: dict[str, Any] | None = None, transport=None):
+    env = env if env is not None else os.environ
+    api = ProduziaAPI(env.get("PRODUZIA_API_URL", "http://produzia:5000/api"),
+                      env.get("PRODUZIA_API_KEY", ""), transport=transport)
+    # host 0.0.0.0: atras do Traefik o Host e o dominio publico; a protecao e o bearer token.
+    # Stateless: cada POST e independente (sobrevive a restart do container sem sessao perdida).
+    # Respostas em SSE: json_response=True devolve corpo vazio no uvicorn com mcp 1.27/starlette 1.0.
+    mcp = build_server(api, host="0.0.0.0", stateless_http=True, streamable_http_path="/mcp")
+    return BearerAuth(mcp.streamable_http_app(), env.get("MCP_TOKEN", ""))
+
+
+def main():
+    import uvicorn
+
+    if not os.environ.get("MCP_TOKEN"):
+        raise SystemExit("Defina MCP_TOKEN.")
+    uvicorn.run(create_app(), host="0.0.0.0", port=int(os.environ.get("PORT", "8000")),
+                proxy_headers=True, forwarded_allow_ips="*")
+
+
+if __name__ == "__main__":
+    main()

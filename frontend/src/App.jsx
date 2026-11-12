@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api.js'
 import { BoardsProvider, useBoards } from './boards.jsx'
 import BoardFilter from './components/BoardFilter.jsx'
-import { Icon } from './components/ui.jsx'
+import { Icon, Loading } from './components/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Gantt from './pages/Gantt.jsx'
 import Login from './pages/Login.jsx'
@@ -11,7 +11,10 @@ import Quadros from './pages/Quadros.jsx'
 import Resumo from './pages/Resumo.jsx'
 import { ThemeSwitch } from './theme.jsx'
 
-const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/quadros': 'Quadros', '/gantt': 'Cronograma' }
+// Markdown e Mermaid so carregam quando a pagina de processos abre.
+const Processos = lazy(() => import('./pages/Processos.jsx'))
+
+const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/gantt': 'Cronograma', '/processos': 'Processos', '/quadros': 'Quadros' }
 
 export default function App() {
   const [user, setUser] = useState(undefined)
@@ -60,7 +63,7 @@ function Shell({ onLogout }) {
     setTimeout(() => setRefreshing(false), 700)
   }
 
-  const showFilter = location.pathname !== '/quadros'
+  const showFilter = !['/quadros', '/processos'].includes(location.pathname)
   // O cronograma escolhe um quadro só, na própria página.
   const showBoardFilter = showFilter && location.pathname !== '/gantt'
 
@@ -72,6 +75,7 @@ function Shell({ onLogout }) {
           <NavLink to="/" end><Icon name="dashboard" /><span>Dashboard</span></NavLink>
           <NavLink to="/resumo"><Icon name="calendar" /><span>Resumo do dia</span></NavLink>
           <NavLink to="/gantt"><Icon name="gantt" /><span>Cronograma</span></NavLink>
+          <NavLink to="/processos"><Icon name="flow" /><span>Processos</span></NavLink>
           <NavLink to="/quadros"><Icon name="board" /><span>Quadros</span></NavLink>
         </nav>
         <ThemeSwitch />
@@ -94,6 +98,7 @@ function Shell({ onLogout }) {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/resumo" element={<Resumo />} />
+            <Route path="/processos" element={<Suspense fallback={<Loading text="Carregando…" />}><Processos /></Suspense>} />
             <Route path="/quadros" element={<Quadros />} />
             <Route path="/gantt" element={<Gantt />} />
             <Route path="*" element={<Navigate to="/" replace />} />
