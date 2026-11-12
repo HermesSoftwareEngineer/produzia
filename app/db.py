@@ -12,6 +12,20 @@ CREATE TABLE IF NOT EXISTS boards (
     done_list_ids  TEXT NOT NULL DEFAULT '[]',
     criado_em      TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS processos (
+    id             TEXT PRIMARY KEY,
+    board_id       TEXT NOT NULL,
+    nome           TEXT NOT NULL,
+    descricao      TEXT NOT NULL DEFAULT '',
+    categoria      TEXT,
+    markdown       TEXT,
+    fluxograma     TEXT,
+    criado_em      TEXT NOT NULL,
+    atualizado_em  TEXT NOT NULL,
+    atualizado_por TEXT NOT NULL DEFAULT 'web'
+);
+CREATE INDEX IF NOT EXISTS processos_board ON processos (board_id);
 """
 
 

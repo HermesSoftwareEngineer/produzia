@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, request, send_from_directory, session
 
-from . import db, metrics
+from . import db, metrics, processos
 from .trello import PowerUpClient, SourceError, TrelloClient
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -60,6 +60,7 @@ def create_app(overrides=None):
         APP_USER=env("APP_USER", "admin"),
         APP_PASSWORD=env("APP_PASSWORD", ""),
         TIMEZONE=env("TIMEZONE", "America/Sao_Paulo"),
+        PRODUZIA_API_KEY=env("PRODUZIA_API_KEY", ""),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=env("COOKIE_SECURE", "1") == "1",
@@ -100,6 +101,17 @@ def create_app(overrides=None):
                 return jsonify(erro="Faça login."), 401
             return view(*args, **kwargs)
         return wrapper
+
+    def api_or_key_required(view):
+        """Sessao do navegador ou chave de servico (X-API-Key), para leituras do MCP."""
+        @wraps(view)
+        def wrapper(*args, **kwargs):
+            if not (logged_in() or processos.service_key_ok()):
+                return jsonify(erro="Faça login."), 401
+            return view(*args, **kwargs)
+        return wrapper
+
+    app.register_blueprint(processos.bp)
 
     # --- Paginas -------------------------------------------------------------
 
@@ -156,6 +168,7 @@ def create_app(overrides=None):
     @app.get("/login")
     @app.get("/resumo")
     @app.get("/quadros")
+    @app.get("/processos")
     def spa():
         response = send_from_directory(PUBLIC_DIR, "index.html")
         response.headers["Cache-Control"] = "no-cache"
@@ -172,7 +185,7 @@ def create_app(overrides=None):
     # --- Quadros -------------------------------------------------------------
 
     @app.get("/api/boards")
-    @api_login_required
+    @api_or_key_required
     def boards_list():
         return jsonify(quadros=db.list_boards())
 
@@ -257,7 +270,7 @@ def create_app(overrides=None):
         return jsonify(ok=True)
 
     @app.get("/api/resumo")
-    @api_login_required
+    @api_or_key_required
     def resumo():
         try:
             day = metrics.parse_day(request.args.get("data"), tz)
@@ -273,7 +286,7 @@ def create_app(overrides=None):
         return jsonify(out)
 
     @app.get("/api/dashboard")
-    @api_login_required
+    @api_or_key_required
     def dashboard():
         try:
             days = max(1, min(MAX_DAYS, int(request.args.get("dias", 14))))
