@@ -1,16 +1,19 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api.js'
 import { BoardsProvider, useBoards } from './boards.jsx'
 import BoardFilter from './components/BoardFilter.jsx'
-import { Icon } from './components/ui.jsx'
+import { Icon, Loading } from './components/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Login from './pages/Login.jsx'
 import Quadros from './pages/Quadros.jsx'
 import Resumo from './pages/Resumo.jsx'
 import { ThemeSwitch } from './theme.jsx'
 
-const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/quadros': 'Quadros' }
+// Markdown e Mermaid so carregam quando a pagina de processos abre.
+const Processos = lazy(() => import('./pages/Processos.jsx'))
+
+const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/quadros': 'Quadros', '/processos': 'Processos' }
 
 export default function App() {
   const [user, setUser] = useState(undefined)
@@ -59,7 +62,7 @@ function Shell({ onLogout }) {
     setTimeout(() => setRefreshing(false), 700)
   }
 
-  const showFilter = location.pathname !== '/quadros'
+  const showFilter = !['/quadros', '/processos'].includes(location.pathname)
 
   return (
     <div className="shell">
@@ -68,6 +71,7 @@ function Shell({ onLogout }) {
         <nav>
           <NavLink to="/" end><Icon name="dashboard" /><span>Dashboard</span></NavLink>
           <NavLink to="/resumo"><Icon name="calendar" /><span>Resumo do dia</span></NavLink>
+          <NavLink to="/processos"><Icon name="flow" /><span>Processos</span></NavLink>
           <NavLink to="/quadros"><Icon name="board" /><span>Quadros</span></NavLink>
         </nav>
         <ThemeSwitch />
@@ -90,6 +94,7 @@ function Shell({ onLogout }) {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/resumo" element={<Resumo />} />
+            <Route path="/processos" element={<Suspense fallback={<Loading text="Carregando…" />}><Processos /></Suspense>} />
             <Route path="/quadros" element={<Quadros />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
