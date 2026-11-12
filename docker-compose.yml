@@ -32,6 +32,46 @@ services:
       - "traefik.http.routers.produzia.tls.certresolver=letsencrypt"
       - "traefik.http.services.produzia.loadbalancer.server.port=5000"
     networks:
+      olimpo-net:
+        # O servidor MCP chama a API em http://produzia:5000/api.
+        aliases:
+          - produzia
+
+  produzia-mcp:
+    build: ./mcp_server
+    image: produzia-mcp:latest
+    container_name: produzia-mcp
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PORT=8000
+      - PRODUZIA_API_URL=http://produzia:5000/api
+    depends_on:
+      - produzia
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=olimpo-net"
+      - "traefik.http.routers.produzia-mcp.rule=Host(`produzia.olimpo-services.com.br`) && PathPrefix(`/mcp`)"
+      - "traefik.http.routers.produzia-mcp.priority=100"
+      - "traefik.http.routers.produzia-mcp.entrypoints=websecure"
+      - "traefik.http.routers.produzia-mcp.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.produzia-mcp.service=produzia-mcp"
+      - "traefik.http.services.produzia-mcp.loadbalancer.server.port=8000"
+    networks:
       - olimpo-net
 
 volumes:
