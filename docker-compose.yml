@@ -70,7 +70,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=olimpo-net"
       # /mcp e todo o OAuth 2.0: descoberta (.well-known), registro, autorizacao, token e login.
-      - "traefik.http.routers.produzia-mcp.rule=Host(`produzia.olimpo-services.com.br`) && (PathPrefix(`/mcp`) || PathPrefix(`/.well-known/oauth-`) || PathPrefix(`/oauth/`) || Path(`/authorize`) || Path(`/token`) || Path(`/register`) || Path(`/revoke`))"
+      - "traefik.http.routers.produzia-mcp.rule=Host(`produzia.olimpo-services.com.br`) && (PathPrefix(`/mcp`) || PathPrefix(`/.well-known/oauth-`) || PathPrefix(`/oauth/`) || Path(`/authorize`) || Path(`/token`) || Path(`/register`))"
       - "traefik.http.routers.produzia-mcp.priority=100"
       - "traefik.http.routers.produzia-mcp.entrypoints=websecure"
       - "traefik.http.routers.produzia-mcp.tls.certresolver=letsencrypt"

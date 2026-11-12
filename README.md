@@ -39,7 +39,8 @@ com o header `X-API-Key: $PRODUZIA_API_KEY`.
   autorização (`/.well-known/oauth-protected-resource/mcp` e `/.well-known/oauth-authorization-server`),
   registra-se sozinho (`/register`) e o dono autoriza em `/oauth/login` com o usuário e a senha do
   Produzia (`APP_USER`/`APP_PASSWORD`). Código com PKCE S256, access token de 24 h e refresh token de
-  90 dias com rotação. Clientes e tokens (só o hash) ficam em SQLite no volume `produzia-mcp-data`.
+  90 dias com rotação (sem endpoint de revogação: no SDK 1.27 ele exige `client_secret`, que
+  clientes públicos não têm). Clientes e tokens (só o hash) ficam em SQLite no volume `produzia-mcp-data`.
 - **Token fixo** `Authorization: Bearer $MCP_TOKEN`, para clientes configurados com header.
 
 No claude.ai: **Configurações → Conectores → Adicionar conector personalizado**, URL

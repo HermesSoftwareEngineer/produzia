@@ -249,7 +249,9 @@ def create_app(env: dict[str, Any] | None = None, transport=None):
         resource_server_url=AnyHttpUrl(f"{public_url}/mcp"),
         client_registration_options=ClientRegistrationOptions(
             enabled=True, valid_scopes=[SCOPE], default_scopes=[SCOPE]),
-        revocation_options=RevocationOptions(enabled=True),
+        # Revogacao desligada: no SDK 1.27 o /revoke exige client_secret, que clientes publicos
+        # (como o claude.ai, com PKCE) nao tem. Tokens expiram sozinhos (24 h / 90 dias).
+        revocation_options=RevocationOptions(enabled=False),
         required_scopes=[SCOPE],
     )
     # host 0.0.0.0: atras do Traefik o Host e o dominio publico.

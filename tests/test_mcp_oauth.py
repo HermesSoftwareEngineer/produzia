@@ -83,6 +83,7 @@ def test_discovery_metadata(flask_app, tmp_path):
         assert meta["token_endpoint"] == f"{BASE}/token"
         assert meta["registration_endpoint"] == f"{BASE}/register"
         assert "S256" in meta["code_challenge_methods_supported"]
+        assert "revocation_endpoint" not in meta
         assert tc.get("/health").json() == {"status": "ok"}
 
 
