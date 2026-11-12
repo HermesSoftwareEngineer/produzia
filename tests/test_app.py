@@ -20,6 +20,7 @@ CARD2 = "695574f0" + "1" * 16
 class FakeTrello:
     def __init__(self):
         self.cache = TTLCache()
+        self.extra_cards = []  # cards a mais para testes especificos (ex.: cronograma)
         self.actions_data = [
             {"id": "x1", "type": "commentCard", "date": "2026-11-11T13:00:00.000Z", "idMemberCreator": ANA,
              "memberCreator": {"id": ANA, "fullName": "Ana Lima", "username": "ana"},
@@ -55,9 +56,10 @@ class FakeTrello:
     def open_cards(self, board_id):
         return [
             {"id": CARD1, "name": "Orçamento", "idList": L_TODO, "idMembers": [ANA],
-             "due": "2026-11-05T15:00:00.000Z", "dueComplete": False, "shortUrl": "https://trello.com/c/1"},
+             "start": "2026-11-02T03:00:00.000Z", "due": "2026-11-05T15:00:00.000Z", "dueComplete": False, "shortUrl": "https://trello.com/c/1"},
             {"id": CARD2, "name": "Entrega", "idList": L_DONE, "idMembers": [BETO],
-             "due": None, "dueComplete": False, "shortUrl": "https://trello.com/c/2"},
+             "start": None, "due": None, "dueComplete": False, "shortUrl": "https://trello.com/c/2"},
+            *self.extra_cards,
         ]
 
     def actions(self, board_id, since, before, ttl=60):
@@ -67,6 +69,7 @@ class FakeTrello:
 class FakePowerUp:
     def __init__(self):
         self.cache = TTLCache()
+        self.extra_items = []
 
     def items(self, board_id):
         base = {"boardId": board_id, "cardId": CARD1, "checklistNome": "Etapas", "dataInicio": None,
@@ -81,6 +84,7 @@ class FakePowerUp:
             # Concluido depois do dia 11: no resumo do dia 11 ainda aparece como pendente.
             {**base, "id": "i4", "texto": "Medir obra", "responsavelId": BETO, "feito": True,
              "concluidoEm": "2026-11-13T12:00:00+00:00", "concluidoPor": BETO, "dataFim": "2026-11-20"},
+            *self.extra_items,
         ], None
 
 

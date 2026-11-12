@@ -60,7 +60,7 @@ class TrelloClient:
     def open_cards(self, board_id):
         return self.cache.get_or_set(("cards", board_id), 60, lambda: self._get(
             f"/boards/{board_id}/cards/open",
-            fields="name,idList,idMembers,due,dueComplete,shortUrl,dateLastActivity"))
+            fields="name,idList,idMembers,start,due,dueComplete,shortUrl,dateLastActivity"))
 
     def actions(self, board_id, since, before, ttl=60):
         """Acoes do quadro entre dois instantes UTC (ISO), paginando de 1000 em 1000."""

@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, request, send_from_directory, session
 
-from . import db, metrics
+from . import db, gantt, metrics
 from .trello import PowerUpClient, SourceError, TrelloClient
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -156,6 +156,7 @@ def create_app(overrides=None):
     @app.get("/login")
     @app.get("/resumo")
     @app.get("/quadros")
+    @app.get("/gantt")
     def spa():
         response = send_from_directory(PUBLIC_DIR, "index.html")
         response.headers["Cache-Control"] = "no-cache"
@@ -287,6 +288,23 @@ def create_app(overrides=None):
         out = metrics.dashboard(data, today, days, tz)
         out["avisos"] = warnings(data)
         out["atualizadoEm"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        return jsonify(out)
+
+    # --- Cronograma (Gantt) --------------------------------------------------
+
+    @app.get("/api/gantt")
+    @api_login_required
+    def gantt_view():
+        board = db.get_board(request.args.get("quadro", ""))
+        if not board:
+            raise ApiError(404, "Escolha um quadro cadastrado.")
+        bid = board["id"]
+        lists = trello.lists(bid)
+        members = trello.members(bid)
+        cards = trello.open_cards(bid)
+        items, warning = powerup.items(bid)
+        out = gantt.build(board, lists, members, cards, items, tz, gantt.today(tz))
+        out["avisos"] = [warning] if warning else []
         return jsonify(out)
 
     return app
