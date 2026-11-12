@@ -1,0 +1,42 @@
+services:
+  produzia:
+    build: .
+    image: produzia:latest
+    container_name: produzia
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PORT=5000
+      - DATABASE_PATH=/app/data/produzia.sqlite3
+    volumes:
+      - produzia-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=olimpo-net"
+      - "traefik.http.routers.produzia.rule=Host(`produzia.olimpo-services.com.br`)"
+      - "traefik.http.routers.produzia.entrypoints=websecure"
+      - "traefik.http.routers.produzia.tls.certresolver=letsencrypt"
+      - "traefik.http.services.produzia.loadbalancer.server.port=5000"
+    networks:
+      - olimpo-net
+
+volumes:
+  produzia-data:
+
+networks:
+  olimpo-net:
+    external: true
