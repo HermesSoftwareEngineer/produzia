@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, request, send_from_directory, session
 
-from . import db, gantt, metrics
+from . import calendario, db, gantt, metrics
 from .trello import PowerUpClient, SourceError, TrelloClient
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -157,6 +157,7 @@ def create_app(overrides=None):
     @app.get("/resumo")
     @app.get("/quadros")
     @app.get("/gantt")
+    @app.get("/calendario")
     def spa():
         response = send_from_directory(PUBLIC_DIR, "index.html")
         response.headers["Cache-Control"] = "no-cache"
@@ -305,6 +306,20 @@ def create_app(overrides=None):
         items, warning = powerup.items(bid)
         out = gantt.build(board, lists, members, cards, items, tz, gantt.today(tz))
         out["avisos"] = [warning] if warning else []
+        return jsonify(out)
+
+    # --- Calendario ----------------------------------------------------------
+
+    @app.get("/api/calendario")
+    @api_login_required
+    def calendario_view():
+        try:
+            inicio, fim = calendario.parse_range(request.args.get("inicio"), request.args.get("fim"))
+        except ValueError as exc:
+            raise ApiError(400, str(exc))
+        data = metrics.collect(selected_boards(), trello, powerup, with_actions=False)
+        out = calendario.build(data, inicio, fim, tz, gantt.today(tz))
+        out["avisos"] = warnings(data)
         return jsonify(out)
 
     return app
