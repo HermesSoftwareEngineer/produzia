@@ -17,7 +17,9 @@ INSTRUCOES = """\
 Produzia é o painel de produtividade dos quadros do Trello da equipe. Aqui você consulta os
 quadros cadastrados, o resumo do dia e o dashboard, e mantém o Mapeamento de Processos:
 cada processo pertence a um quadro e tem um documento em Markdown (GitHub-flavored: títulos,
-listas, tabelas, listas de tarefas "- [ ]") e/ou um fluxograma em Mermaid (ex.: "flowchart TD").
+listas, tabelas, listas de tarefas "- [ ]") e/ou um fluxograma. O fluxograma pode ser Mermaid
+(ex.: "flowchart TD") ou HTML livre com CSS, quando o visual importa: o HTML é desenhado numa
+área isolada, então capriche no layout (cores, cartões das etapas, setas, losangos de decisão).
 Use listar_quadros para descobrir o quadro_id antes de criar processos.
 Antes de atualizar, leia o processo com obter_processo para não perder conteúdo."""
 
@@ -31,8 +33,28 @@ DOC_MERMAID = (
     "flowchart TD\n  A[Pedido recebido] --> B{Pagamento aprovado?}\n"
     "  B -->|Sim| C[Separar estoque]\n  B -->|Não| D[Avisar cliente]\n"
     "Coloque textos com acentos, parênteses ou dois-pontos entre aspas: A[\"Etapa (1): revisão\"]. "
-    "Também aceita sequenceDiagram, stateDiagram-v2 etc. Até 50 KB."
+    "Também aceita sequenceDiagram, stateDiagram-v2 etc. Até 50 KB. "
+    "Use fluxograma_mermaid OU fluxograma_html, não os dois."
 )
+DOC_HTML = (
+    "Fluxograma em HTML livre com CSS (e JS opcional), para quando o visual é prioridade. Pode ser um "
+    "fragmento (<style>...</style><div>...</div>) ou um documento completo. É exibido num iframe isolado "
+    "(sem acesso ao Produzia), com fonte Inter e fundo transparente; a altura se ajusta ao conteúdo. "
+    "O atributo data-theme='light'|'dark' do <html> acompanha o tema do app, então você pode estilizar "
+    "os dois com [data-theme=dark]. Prefira um layout responsivo (flex/grid, largura 100%). Até 300 KB. "
+    "Use fluxograma_mermaid OU fluxograma_html, não os dois."
+)
+
+
+def _fluxo(mermaid, html):
+    """Escolhe o campo de fluxograma enviado e o tipo correspondente."""
+    if mermaid is not None and html is not None:
+        raise ToolError("Envie fluxograma_mermaid ou fluxograma_html, não os dois.")
+    if html is not None:
+        return {"fluxograma": html, "fluxogramaTipo": "html"}
+    if mermaid is not None:
+        return {"fluxograma": mermaid, "fluxogramaTipo": "mermaid"}
+    return {}
 
 
 class ProduziaAPI:
@@ -126,14 +148,15 @@ def build_server(api: ProduziaAPI, **settings) -> FastMCP:
         return await api.request("GET", "/processos", params=params)
 
     @mcp.tool(description="Retorna um processo completo: nome, descrição, categoria, quadro, "
-                          "documento Markdown e fluxograma Mermaid.")
+                          "documento Markdown e fluxograma (fluxogramaTipo diz se é mermaid ou html).")
     async def obter_processo(
         processo_id: Annotated[str, Field(description="ID do processo (de listar_processos).")],
     ) -> dict:
         return await api.request("GET", f"/processos/{processo_id}")
 
     @mcp.tool(description="Cria um processo num quadro. Informe pelo menos um entre markdown "
-                          "(documento GitHub-flavored) e fluxograma_mermaid (ex.: 'flowchart TD'). "
+                          "(documento GitHub-flavored) e um fluxograma: fluxograma_mermaid (ex.: 'flowchart TD') "
+                          "ou fluxograma_html (HTML/CSS livre, para um visual caprichado). "
                           "Retorna o processo criado com o id.")
     async def criar_processo(
         quadro_id: Annotated[str, Field(description="ID do quadro (de listar_quadros).")],
@@ -142,15 +165,17 @@ def build_server(api: ProduziaAPI, **settings) -> FastMCP:
         categoria: Annotated[str | None, Field(description="Agrupamento opcional, ex.: 'Comercial', 'Financeiro'.")] = None,
         markdown: Annotated[str | None, Field(description=DOC_MARKDOWN)] = None,
         fluxograma_mermaid: Annotated[str | None, Field(description=DOC_MERMAID)] = None,
+        fluxograma_html: Annotated[str | None, Field(description=DOC_HTML)] = None,
     ) -> dict:
-        if not (markdown or "").strip() and not (fluxograma_mermaid or "").strip():
-            raise ToolError("Informe markdown ou fluxograma_mermaid (pelo menos um dos dois).")
+        fluxo = _fluxo(fluxograma_mermaid, fluxograma_html)
+        if not (markdown or "").strip() and not (fluxo.get("fluxograma") or "").strip():
+            raise ToolError("Informe pelo menos um: markdown ou um fluxograma (fluxograma_mermaid ou fluxograma_html).")
         body = {"quadroId": quadro_id, "nome": nome, "descricao": descricao or "",
-                "categoria": categoria, "markdown": markdown, "fluxograma": fluxograma_mermaid}
+                "categoria": categoria, "markdown": markdown, **fluxo}
         return await api.request("POST", "/processos", body=body)
 
     @mcp.tool(description="Atualiza um processo. Só os campos informados mudam; os demais ficam como estão. "
-                          "Envie string vazia em categoria, markdown ou fluxograma_mermaid para remover o campo "
+                          "Envie string vazia em categoria, markdown ou no fluxograma para remover o campo "
                           "(o processo precisa manter documento ou fluxograma). Os textos enviados substituem "
                           "os atuais por inteiro: leia antes com obter_processo.")
     async def atualizar_processo(
@@ -161,10 +186,12 @@ def build_server(api: ProduziaAPI, **settings) -> FastMCP:
         quadro_id: Annotated[str | None, Field(description="Mover para outro quadro cadastrado.")] = None,
         markdown: Annotated[str | None, Field(description=DOC_MARKDOWN)] = None,
         fluxograma_mermaid: Annotated[str | None, Field(description=DOC_MERMAID)] = None,
+        fluxograma_html: Annotated[str | None, Field(description=DOC_HTML)] = None,
     ) -> dict:
         fields = {"nome": nome, "descricao": descricao, "categoria": categoria, "quadroId": quadro_id,
-                  "markdown": markdown, "fluxograma": fluxograma_mermaid}
+                  "markdown": markdown}
         body = {k: v for k, v in fields.items() if v is not None}
+        body.update(_fluxo(fluxograma_mermaid, fluxograma_html))
         if not body:
             raise ToolError("Informe pelo menos um campo para atualizar.")
         return await api.request("PATCH", f"/processos/{processo_id}", body=body)

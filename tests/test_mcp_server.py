@@ -75,6 +75,17 @@ def test_process_tools_roundtrip(flask_app):
     assert call(mcp, "listar_processos")["processos"] == []
 
 
+def test_html_flowchart_tool(flask_app):
+    mcp = make_mcp(flask_app)
+    html = "<style>.e{padding:8px}</style><div class='e'>Pedido</div>"
+    p = call(mcp, "criar_processo", quadro_id=BOARD, nome="Visual", fluxograma_html=html)
+    assert p["fluxogramaTipo"] == "html"
+    up = call(mcp, "atualizar_processo", processo_id=p["id"], fluxograma_mermaid=FLOW)
+    assert up["fluxogramaTipo"] == "mermaid"
+    with pytest.raises(ToolError, match="não os dois"):
+        call(mcp, "criar_processo", quadro_id=BOARD, nome="X", fluxograma_html=html, fluxograma_mermaid=FLOW)
+
+
 def test_tool_errors_are_readable(flask_app):
     mcp = make_mcp(flask_app)
     with pytest.raises(ToolError, match="pelo menos um"):

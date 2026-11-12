@@ -126,3 +126,42 @@ def test_mermaid_light_check():
 
 def test_spa_route(client):
     assert client.get("/processos").status_code in (200, 404)
+
+
+HTML = "<style>.etapa{padding:8px}</style><div class='etapa'>Pedido</div>"
+
+
+def test_html_flowchart(client):
+    p = client.post("/api/processos", json=novo(markdown=None, fluxograma=HTML, fluxogramaTipo="html")).get_json()
+    assert p["fluxogramaTipo"] == "html" and p["fluxograma"].startswith("<style>")
+    # HTML enviado sem o tipo tambem e reconhecido
+    auto = client.post("/api/processos", json=novo(fluxograma=HTML)).get_json()
+    assert auto["fluxogramaTipo"] == "html"
+    # Mermaid continua sendo o padrao e validado
+    m = client.post("/api/processos", json=novo(fluxograma=FLOW)).get_json()
+    assert m["fluxogramaTipo"] == "mermaid"
+    assert client.post("/api/processos", json=novo(fluxograma="isso nao e mermaid")).status_code == 400
+    # Trocar de HTML para Mermaid exige um fluxograma Mermaid valido
+    assert client.patch(f"/api/processos/{p['id']}", json={"fluxogramaTipo": "mermaid"}).status_code == 400
+    ok = client.patch(f"/api/processos/{p['id']}", json={"fluxogramaTipo": "mermaid", "fluxograma": FLOW})
+    assert ok.get_json()["fluxogramaTipo"] == "mermaid"
+    assert client.post("/api/processos", json=novo(fluxogramaTipo="svg")).status_code == 400
+    grande = "<div>" + "x" * (310 * 1024) + "</div>"
+    assert client.post("/api/processos", json=novo(fluxograma=grande, fluxogramaTipo="html")).status_code == 400
+
+
+def test_existing_database_gets_flowchart_type(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.sqlite3"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        "CREATE TABLE processos (id TEXT PRIMARY KEY, board_id TEXT NOT NULL, nome TEXT NOT NULL,"
+        " descricao TEXT, categoria TEXT, markdown TEXT, fluxograma TEXT, criado_em TEXT NOT NULL,"
+        " atualizado_em TEXT NOT NULL, atualizado_por TEXT NOT NULL);"
+        "INSERT INTO processos VALUES ('p1', 'b', 'Antigo', '', NULL, NULL, 'flowchart TD', 't', 't', 'web');"
+    )
+    conn.commit()
+    conn.close()
+    create_app({"TESTING": True, "DATABASE_PATH": str(path), "TRELLO": FakeTrello(), "POWERUP": FakePowerUp()})
+    row = sqlite3.connect(path).execute("SELECT fluxograma_tipo FROM processos").fetchone()
+    assert row == ("mermaid",)

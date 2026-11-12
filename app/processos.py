@@ -1,4 +1,4 @@
-"""Mapeamento de processos: documentos em Markdown e fluxogramas em Mermaid por quadro."""
+"""Mapeamento de processos: documento em Markdown e fluxograma (Mermaid ou HTML livre) por quadro."""
 import hmac
 import re
 import uuid
@@ -13,8 +13,10 @@ bp = Blueprint("processos", __name__, url_prefix="/api/processos")
 LIMITES = {"nome": 120, "descricao": 500, "categoria": 60}
 MAX_MARKDOWN = 200 * 1024
 MAX_FLUXOGRAMA = 50 * 1024
+MAX_FLUXOGRAMA_HTML = 300 * 1024
+TIPOS_FLUXOGRAMA = ("mermaid", "html")
 MAX_BODY = 600 * 1024
-CAMPOS = ("quadroId", "nome", "descricao", "categoria", "markdown", "fluxograma")
+CAMPOS = ("quadroId", "nome", "descricao", "categoria", "markdown", "fluxograma", "fluxogramaTipo")
 MERMAID_INICIO = re.compile(
     r"^(flowchart|graph|sequenceDiagram|classDiagram(-v2)?|stateDiagram(-v2)?|erDiagram|journey|gantt|pie"
     r"|quadrantChart|requirementDiagram|gitGraph|mindmap|timeline|sankey(-beta)?|xychart(-beta)?"
@@ -113,7 +115,19 @@ def clean(body, current=None):
         if out.get(key) and len(out[key]) > limit:
             _fail(400, f"O campo {key} aceita até {limit} caracteres.")
 
-    for key, limit in (("markdown", MAX_MARKDOWN), ("fluxograma", MAX_FLUXOGRAMA)):
+    if "fluxogramaTipo" in body:
+        tipo = (_text(body, "fluxogramaTipo") or "").strip().lower()
+        if tipo not in TIPOS_FLUXOGRAMA:
+            _fail(400, "fluxogramaTipo deve ser 'mermaid' ou 'html'.")
+        out["fluxograma_tipo"] = tipo
+    elif isinstance(body.get("fluxograma"), str) and body["fluxograma"].lstrip().startswith("<"):
+        out["fluxograma_tipo"] = "html"  # HTML enviado sem informar o tipo
+    elif creating:
+        out["fluxograma_tipo"] = "mermaid"
+    tipo = out.get("fluxograma_tipo") or (current or {}).get("fluxograma_tipo") or "mermaid"
+    max_fluxo = MAX_FLUXOGRAMA_HTML if tipo == "html" else MAX_FLUXOGRAMA
+
+    for key, limit in (("markdown", MAX_MARKDOWN), ("fluxograma", max_fluxo)):
         if creating or key in body:
             value = _text(body, key)
             value = value if value and value.strip() else None
@@ -123,13 +137,19 @@ def clean(body, current=None):
 
     if out.get("fluxograma"):
         out["fluxograma"] = out["fluxograma"].strip() + "\n"
-        error = mermaid_error(out["fluxograma"])
+        if tipo == "mermaid":
+            error = mermaid_error(out["fluxograma"])
+            if error:
+                _fail(400, error)
+    elif "fluxograma_tipo" in out and (current or {}).get("fluxograma") and tipo == "mermaid":
+        # Trocar para Mermaid sem enviar um fluxograma novo: o atual precisa ser Mermaid valido.
+        error = mermaid_error(current["fluxograma"])
         if error:
-            _fail(400, error)
+            _fail(400, "Para trocar o tipo para Mermaid, envie também o fluxograma em Mermaid.")
 
     merged = {**(current or {}), **out}
     if not merged.get("markdown") and not merged.get("fluxograma"):
-        _fail(400, "Informe o documento (markdown) ou o fluxograma (Mermaid). Pelo menos um dos dois.")
+        _fail(400, "Informe o documento (markdown) ou o fluxograma (Mermaid ou HTML). Pelo menos um dos dois.")
     return out
 
 
@@ -150,6 +170,7 @@ def serialize(row, full=True):
         "categoria": row["categoria"],
         "temDocumento": bool(row["markdown"]),
         "temFluxograma": bool(row["fluxograma"]),
+        "fluxogramaTipo": row["fluxograma_tipo"],
         "criadoEm": row["criado_em"],
         "atualizadoEm": row["atualizado_em"],
         "atualizadoPor": row["atualizado_por"],
@@ -206,9 +227,10 @@ def criar():
     processo_id = uuid.uuid4().hex
     db.get_db().execute(
         "INSERT INTO processos (id, board_id, nome, descricao, categoria, markdown, fluxograma,"
-        " criado_em, atualizado_em, atualizado_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " fluxograma_tipo, criado_em, atualizado_em, atualizado_por)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (processo_id, data["board_id"], data["nome"], data["descricao"], data["categoria"],
-         data["markdown"], data["fluxograma"], now, now, _author()),
+         data["markdown"], data["fluxograma"], data["fluxograma_tipo"], now, now, _author()),
     )
     return jsonify(serialize(_row(processo_id))), 201
 
@@ -219,7 +241,8 @@ def atualizar(processo_id):
     body = request.get_json(silent=True)
     if isinstance(body, dict) and not any(k in body for k in CAMPOS):
         _fail(400, "Nada para atualizar.")
-    data = clean(body, current={"markdown": row["markdown"], "fluxograma": row["fluxograma"]})
+    data = clean(body, current={"markdown": row["markdown"], "fluxograma": row["fluxograma"],
+                                "fluxograma_tipo": row["fluxograma_tipo"]})
     data.update(atualizado_em=_now(), atualizado_por=_author())
     sets = ", ".join(f"{k} = ?" for k in data)
     db.get_db().execute(f"UPDATE processos SET {sets} WHERE id = ?", (*data.values(), processo_id))

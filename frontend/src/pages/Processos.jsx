@@ -3,12 +3,15 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useBoards } from '../boards.jsx'
 import MarkdownView from '../components/Markdown.jsx'
+import HtmlFlow from '../components/HtmlFlow.jsx'
 import MermaidDiagram from '../components/Mermaid.jsx'
 import { Empty, ErrorBox, Icon, Loading } from '../components/ui.jsx'
+import { MODELO_FLUXO_HTML } from '../fluxoModeloHtml.js'
 
 const KEY = 'produzia.processos.quadro'
 const MAX_MD = 200 * 1024
 const MAX_FLOW = 50 * 1024
+const MAX_FLOW_HTML = 300 * 1024
 const SEM_CATEGORIA = 'Sem categoria'
 
 const MODELO_FLUXO = `flowchart TD
@@ -280,7 +283,11 @@ function ProcessView({ p, mode, setMode, onEdit, onDelete }) {
       <div className={`pc-content pc-${current}`}>
         {(current === 'doc' || current === 'side') && <MarkdownView source={p.markdown} />}
         {(current === 'flow' || current === 'side') && (
-          <div className="pc-flow"><MermaidDiagram code={p.fluxograma} name={p.nome} /></div>
+          <div className="pc-flow">
+            {p.fluxogramaTipo === 'html'
+              ? <HtmlFlow code={p.fluxograma} name={p.nome} />
+              : <MermaidDiagram code={p.fluxograma} name={p.nome} />}
+          </div>
         )}
       </div>
     </article>
@@ -301,6 +308,7 @@ function Editor({ initial, boards, defaultBoard, categories, onClose, onSaved })
     categoria: initial.categoria || '',
     markdown: initial.markdown || '',
     fluxograma: initial.fluxograma || '',
+    fluxogramaTipo: initial.fluxogramaTipo || 'mermaid',
   }), [initial, defaultBoard])
   const [form, setForm] = useState(start)
   const [tab, setTab] = useState(initial.id && !initial.markdown && initial.fluxograma ? 'flow' : 'doc')
@@ -319,9 +327,17 @@ function Editor({ initial, boards, defaultBoard, categories, onClose, onSaved })
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  const isHtml = form.fluxogramaTipo === 'html'
+
+  function setFlowType(tipo) {
+    if (tipo === form.fluxogramaTipo) return
+    if (form.fluxograma.trim() && !window.confirm('Trocar o tipo apaga o fluxograma atual. Continuar?')) return
+    setForm((f) => ({ ...f, fluxogramaTipo: tipo, fluxograma: '' }))
+  }
+
   function insertTemplate() {
     const field = tab === 'doc' ? 'markdown' : 'fluxograma'
-    const model = tab === 'doc' ? MODELO_DOC : MODELO_FLUXO
+    const model = tab === 'doc' ? MODELO_DOC : isHtml ? MODELO_FLUXO_HTML : MODELO_FLUXO
     if (form[field].trim() && !window.confirm('Substituir o conteúdo atual pelo modelo?')) return
     setForm((f) => ({ ...f, [field]: model }))
   }
@@ -330,13 +346,18 @@ function Editor({ initial, boards, defaultBoard, categories, onClose, onSaved })
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    const isFlow = /\.(mmd|mermaid)$/i.test(file.name)
+    const isHtmlFile = /\.html?$/i.test(file.name)
+    const isFlow = isHtmlFile || /\.(mmd|mermaid)$/i.test(file.name)
     const isDoc = /\.(md|markdown|txt)$/i.test(file.name)
-    if (!isFlow && !isDoc) { setError('Envie um arquivo .md (documento) ou .mmd/.mermaid (fluxograma).'); return }
-    if (file.size > (isFlow ? MAX_FLOW : MAX_MD)) { setError(`Arquivo grande demais (máximo ${isFlow ? 50 : 200} KB).`); return }
+    if (!isFlow && !isDoc) { setError('Envie .md (documento), .mmd/.mermaid ou .html (fluxograma).'); return }
+    const limit = isHtmlFile ? MAX_FLOW_HTML : isFlow ? MAX_FLOW : MAX_MD
+    if (file.size > limit) { setError(`Arquivo grande demais (máximo ${limit / 1024} KB).`); return }
     const text = await file.text()
     setError(null)
-    if (isFlow) { setForm((f) => ({ ...f, fluxograma: stripFence(text) })); setTab('flow') }
+    if (isFlow) {
+      setForm((f) => ({ ...f, fluxogramaTipo: isHtmlFile ? 'html' : 'mermaid', fluxograma: isHtmlFile ? text : stripFence(text) }))
+      setTab('flow')
+    }
     else {
       setForm((f) => ({ ...f, markdown: text, nome: f.nome || file.name.replace(/\.\w+$/, '') }))
       setTab('doc')
@@ -355,7 +376,8 @@ function Editor({ initial, boards, defaultBoard, categories, onClose, onSaved })
     e.preventDefault()
     if (!form.nome.trim()) { setError('Informe o nome do processo.'); return }
     if (!form.markdown.trim() && !form.fluxograma.trim()) { setError('Escreva o documento ou o fluxograma (pelo menos um).'); return }
-    if (kb(form.markdown) > 200 || kb(form.fluxograma) > 50) { setError('Conteúdo grande demais (documento até 200 KB, fluxograma até 50 KB).'); return }
+    const flowMax = isHtml ? 300 : 50
+    if (kb(form.markdown) > 200 || kb(form.fluxograma) > flowMax) { setError(`Conteúdo grande demais (documento até 200 KB, fluxograma até ${flowMax} KB).`); return }
     setBusy(true)
     setError(null)
     try {
@@ -411,13 +433,22 @@ function Editor({ initial, boards, defaultBoard, categories, onClose, onSaved })
             </button>
           </div>
           <div className="pc-editor-tools">
+            {tab === 'flow' && (
+              <div className="segmented pc-flow-type" role="radiogroup" aria-label="Tipo do fluxograma">
+                <button type="button" role="radio" aria-checked={!isHtml} className={!isHtml ? 'active' : ''}
+                  onClick={() => setFlowType('mermaid')} title="Diagrama gerado a partir de texto">Mermaid</button>
+                <button type="button" role="radio" aria-checked={isHtml} className={isHtml ? 'active' : ''}
+                  onClick={() => setFlowType('html')} title="Visual livre em HTML e CSS">HTML</button>
+              </div>
+            )}
             <button className="link-btn" type="button" onClick={insertTemplate}>
               <Icon name="plus" />Inserir modelo
             </button>
             <button className="link-btn" type="button" onClick={() => fileRef.current?.click()}>
-              <Icon name="upload" />Importar {tab === 'doc' ? '.md' : '.mmd'}
+              <Icon name="upload" />Importar {tab === 'doc' ? '.md' : isHtml ? '.html' : '.mmd'}
             </button>
-            <input ref={fileRef} type="file" hidden accept={tab === 'doc' ? '.md,.markdown,.txt,text/markdown' : '.mmd,.mermaid'} onChange={upload} />
+            <input ref={fileRef} type="file" hidden onChange={upload}
+              accept={tab === 'doc' ? '.md,.markdown,.txt,text/markdown' : isHtml ? '.html,.htm,text/html' : '.mmd,.mermaid'} />
           </div>
         </div>
 
@@ -433,11 +464,20 @@ function Editor({ initial, boards, defaultBoard, categories, onClose, onSaved })
           ) : (
             <>
               <textarea name="fluxograma" className="mono" value={form.fluxograma} onChange={set('fluxograma')} onKeyDown={tabKey}
-                spellCheck={false} placeholder={'flowchart TD\n    A[Início] --> B{Decisão?}\n    B -->|Sim| C[Fazer]\n    B -->|Não| D[Ajustar]'} />
+                spellCheck={false}
+                placeholder={isHtml
+                  ? '<style>\n  .etapa { padding: 12px; border-radius: 12px; background: var(--pz-surface); }\n</style>\n<div class="etapa">Início</div>'
+                  : 'flowchart TD\n    A[Início] --> B{Decisão?}\n    B -->|Sim| C[Fazer]\n    B -->|Não| D[Ajustar]'} />
               <div className="pc-preview">
-                {form.fluxograma.trim()
-                  ? <MermaidDiagram code={form.fluxograma} name={form.nome} toolbar={false} delay={350} />
-                  : (
+                {form.fluxograma.trim() && isHtml && <HtmlFlow code={form.fluxograma} name={form.nome} toolbar={false} delay={400} />}
+                {form.fluxograma.trim() && !isHtml && <MermaidDiagram code={form.fluxograma} name={form.nome} toolbar={false} delay={350} />}
+                {!form.fluxograma.trim() && isHtml && (
+                  <p className="pc-preview-empty">
+                    Escreva HTML e CSS livres (as variáveis <code>--pz-brand</code>, <code>--pz-surface</code>, <code>--pz-line</code>…
+                    seguem o tema) ou use <button className="link-inline" type="button" onClick={insertTemplate}>o modelo</button>.
+                  </p>
+                )}
+                {!form.fluxograma.trim() && !isHtml && (
                     <p className="pc-preview-empty">
                       Escreva em <a href="https://mermaid.js.org/syntax/flowchart.html" target="_blank" rel="noreferrer">sintaxe Mermaid</a> ou
                       use <button className="link-inline" type="button" onClick={insertTemplate}>o modelo</button>.

@@ -38,10 +38,18 @@ def _connect(path):
 def init_db(path):
     conn = _connect(path)
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.executescript(SCHEMA)
+        _init_schema(conn)
     finally:
         conn.close()
+
+
+def _init_schema(conn):
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(SCHEMA)
+    # Fluxograma pode ser Mermaid ou HTML livre (coluna adicionada depois).
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(processos)")}
+    if "fluxograma_tipo" not in cols:
+        conn.execute("ALTER TABLE processos ADD COLUMN fluxograma_tipo TEXT NOT NULL DEFAULT 'mermaid'")
 
 
 def get_db():
