@@ -70,8 +70,10 @@ class BoardData:
         }
 
 
-def collect(boards, trello, powerup, since, before, actions_ttl=60):
-    """Busca em paralelo tudo que os relatorios precisam de cada quadro."""
+def collect(boards, trello, powerup, since=None, before=None, actions_ttl=60, with_actions=True):
+    """Busca em paralelo tudo que os relatorios precisam de cada quadro.
+
+    Com with_actions=False nao busca as acoes (o calendario so precisa de cards e itens)."""
     def load(board):
         bd = BoardData(board)
         bid = board["id"]
@@ -79,7 +81,8 @@ def collect(boards, trello, powerup, since, before, actions_ttl=60):
             bd.lists = {l["id"]: l for l in trello.lists(bid)}
             bd.members = trello.members(bid)
             bd.cards = {c["id"]: c for c in trello.open_cards(bid)}
-            bd.actions = trello.actions(bid, iso_utc(since), iso_utc(before), ttl=actions_ttl)
+            if with_actions:
+                bd.actions = trello.actions(bid, iso_utc(since), iso_utc(before), ttl=actions_ttl)
         except SourceError as exc:
             bd.warnings.append(f"{board['nome']}: {exc.message}")
         items, warning = powerup.items(bid)

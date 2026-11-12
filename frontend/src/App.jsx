@@ -4,6 +4,7 @@ import { api } from './api.js'
 import { BoardsProvider, useBoards } from './boards.jsx'
 import BoardFilter from './components/BoardFilter.jsx'
 import { Icon, Loading } from './components/ui.jsx'
+import Calendario from './pages/Calendario.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Gantt from './pages/Gantt.jsx'
 import Login from './pages/Login.jsx'
@@ -14,7 +15,10 @@ import { ThemeSwitch } from './theme.jsx'
 // Markdown e Mermaid so carregam quando a pagina de processos abre.
 const Processos = lazy(() => import('./pages/Processos.jsx'))
 
-const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/gantt': 'Cronograma', '/processos': 'Processos', '/quadros': 'Quadros' }
+const TITLES = {
+  '/': 'Dashboard', '/resumo': 'Resumo do dia', '/calendario': 'Calendário',
+  '/gantt': 'Cronograma', '/processos': 'Processos', '/quadros': 'Quadros',
+}
 
 export default function App() {
   const [user, setUser] = useState(undefined)
@@ -74,6 +78,7 @@ function Shell({ onLogout }) {
         <nav>
           <NavLink to="/" end><Icon name="dashboard" /><span>Dashboard</span></NavLink>
           <NavLink to="/resumo"><Icon name="calendar" /><span>Resumo do dia</span></NavLink>
+          <NavLink to="/calendario"><Icon name="calgrid" /><span>Calendário</span></NavLink>
           <NavLink to="/gantt"><Icon name="gantt" /><span>Cronograma</span></NavLink>
           <NavLink to="/processos"><Icon name="flow" /><span>Processos</span></NavLink>
           <NavLink to="/quadros"><Icon name="board" /><span>Quadros</span></NavLink>
@@ -101,6 +106,7 @@ function Shell({ onLogout }) {
             <Route path="/processos" element={<Suspense fallback={<Loading text="Carregando…" />}><Processos /></Suspense>} />
             <Route path="/quadros" element={<Quadros />} />
             <Route path="/gantt" element={<Gantt />} />
+            <Route path="/calendario" element={<Calendario />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

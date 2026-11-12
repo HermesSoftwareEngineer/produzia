@@ -65,7 +65,10 @@ export function Kpi({ label, value, previous, suffix = '', tone, hint }) {
   )
 }
 
-const STATUS_LABEL = { atrasado: 'Atrasado', hoje: 'Vence no dia', andamento: 'Em andamento', prazo: 'No prazo' }
+const STATUS_LABEL = {
+  atrasado: 'Atrasado', hoje: 'Vence no dia', andamento: 'Em andamento', prazo: 'No prazo',
+  concluido: 'Concluído', pendente: 'Pendente',
+}
 
 export function Status({ status, date }) {
   if (!status) return null
