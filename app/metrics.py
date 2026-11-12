@@ -186,16 +186,38 @@ def extract_events(bd):
                 events.append({"tipo": "movimento", "ts": ts, "pessoas": [actor], "card": ref,
                                "de": before.get("name"), "para": after.get("name")})
 
-    for item in bd.items:
-        done_at = parse_ts(item.get("concluidoEm"))
-        if item.get("feito") and done_at:
-            events.append({
-                "tipo": "item_concluido", "ts": done_at, "pessoas": [item_owner(item)],
-                "card": bd.card_ref(item["cardId"]), "texto": item["texto"],
-                "checklist": item.get("checklistNome"), "autor": item.get("concluidoPor"),
-                "dataFim": item.get("dataFim"),
-            })
     return events
+
+
+def _iso_day(value):
+    try:
+        return date.fromisoformat(value) if value else None
+    except ValueError:
+        return None
+
+
+def item_day(item, tz):
+    """Dia em que o item conta: o prazo (data final, ou a de inicio se for a unica).
+
+    Feito com prazo em D = concluido em D; em aberto com prazo em D = pendente de D.
+    So um item feito sem nenhuma data usa o dia em que foi marcado, para nao sumir.
+    """
+    day = _iso_day(item.get("dataFim")) or _iso_day(item.get("dataInicio"))
+    if day or not item.get("feito"):
+        return day
+    done_at = parse_ts(item.get("concluidoEm"))
+    return done_at.astimezone(tz).date() if done_at else None
+
+
+def done_items(bd, tz):
+    """(dia, item) dos itens concluidos, pelo dia do prazo."""
+    out = []
+    for item in bd.items:
+        if item.get("feito"):
+            day = item_day(item, tz)
+            if day:
+                out.append((day, item))
+    return out
 
 
 def item_status(item, day):
@@ -222,19 +244,15 @@ def card_status(card, start, end):
     return "prazo"
 
 
-def pending_items(bd, day, end):
-    """Itens que estavam pendentes no fim do dia (so de cards abertos)."""
+def pending_items(bd, day, tz):
+    """Itens em aberto com prazo no dia (pendentes) ou antes dele (atrasados), de cards abertos."""
     out = []
     for item in bd.items:
-        if item["cardId"] not in bd.cards:
+        if item.get("feito") or item["cardId"] not in bd.cards:
             continue
-        created = parse_ts(item.get("criadoEm"))
-        done_at = parse_ts(item.get("concluidoEm"))
-        if created and created >= end:
-            continue
-        if item.get("feito") and (not done_at or done_at < end):
-            continue
-        out.append(item)
+        prazo = item_day(item, tz)
+        if prazo and prazo <= day:
+            out.append(item)
     return out
 
 
@@ -292,16 +310,20 @@ def day_summary(boards_data, day, tz):
                     if any(c["card"]["id"] == ev["card"]["id"] for c in r["cardsConcluidos"]):
                         continue
                     r["cardsConcluidos"].append({"hora": hora, "card": ev["card"], "via": ev["via"]})
-                elif ev["tipo"] == "item_concluido":
-                    autor = ev.get("autor")
-                    r["itensConcluidos"].append({
-                        "hora": hora, "card": ev["card"], "texto": ev["texto"],
-                        "checklist": ev["checklist"], "dataFim": ev["dataFim"],
-                        "concluidoPor": people.get(autor)["nome"]
-                        if autor and autor != pid and TRELLO_ID.match(autor) else None,
-                    })
 
-        for item in pending_items(bd, day, end):
+        for item_dia, item in done_items(bd, tz):
+            if item_dia != day:
+                continue
+            pid = item_owner(item)
+            autor = item.get("concluidoPor")
+            row(pid)["itensConcluidos"].append({
+                "hora": "", "card": bd.card_ref(item["cardId"]), "texto": item["texto"],
+                "checklist": item.get("checklistNome"), "dataFim": item.get("dataFim"),
+                "concluidoPor": people.get(autor)["nome"]
+                if autor and autor != pid and TRELLO_ID.match(autor) else None,
+            })
+
+        for item in pending_items(bd, day, tz):
             row(item.get("responsavelId") or NO_OWNER)["itensPendentes"].append({
                 "card": bd.card_ref(item["cardId"]), "texto": item["texto"],
                 "checklist": item.get("checklistNome"), "dataInicio": item.get("dataInicio"),
@@ -366,8 +388,7 @@ def dashboard(boards_data, today, days, tz, now=None):
     ranking = {}
     boards_out = []
     hours = [0] * 24
-    field = {"card_concluido": "cardsConcluidos", "item_concluido": "itensConcluidos",
-             "comentario": "comentarios", "card_criado": "cardsCriados"}
+    field = {"card_concluido": "cardsConcluidos", "comentario": "comentarios", "card_criado": "cardsCriados"}
 
     def rank(pid):
         if pid not in ranking:
@@ -406,6 +427,15 @@ def dashboard(boards_data, today, days, tz, now=None):
                 for pid in ev["pessoas"]:
                     if pid:
                         rank(pid)[key] += 1
+
+        prev_first = first_day - timedelta(days=days)
+        for item_dia, item in done_items(bd, tz):
+            if prev_first <= item_dia < first_day:
+                previous["itensConcluidos"] += 1
+            elif first_day <= item_dia <= today:
+                current["itensConcluidos"] += 1
+                series[item_dia.isoformat()]["itensConcluidos"] += 1
+                rank(item_owner(item))["itensConcluidos"] += 1
 
         _, today_end = day_bounds(today, tz)
         for card in pending_cards(bd, today_end):

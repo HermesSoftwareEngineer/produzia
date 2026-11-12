@@ -132,17 +132,36 @@ def test_day_summary_per_person(client):
     ana, beto = people[ANA], people[BETO]
 
     assert [i["texto"] for i in ana["itensConcluidos"]] == ["Cotar material"]
-    assert ana["itensConcluidos"][0]["hora"] == "11:00"
+    assert ana["itensConcluidos"][0]["hora"] == ""  # conta pelo prazo, sem horario
     assert [c["texto"] for c in ana["comentarios"]] == ["Feito o orçamento"]
     assert [(i["texto"], i["status"]) for i in ana["itensPendentes"]] == [("Fechar compra", "atrasado")]
     assert [(c["card"]["nome"], c["status"]) for c in ana["cardsPendentes"]] == [("Orçamento", "atrasado")]
 
     assert [c["card"]["nome"] for c in beto["cardsConcluidos"]] == ["Entrega"]
     assert beto["totais"]["cardsCriados"] == 1
-    assert [i["texto"] for i in beto["itensPendentes"]] == ["Medir obra"]
+    # "Medir obra" esta feito com prazo no dia 20: nao e pendente do dia 11.
+    assert beto["itensPendentes"] == []
 
-    assert people["_sem"]["totais"]["itensPendentes"] == 1
+    # Item em aberto sem prazo nao entra no resumo de nenhum dia.
+    assert "_sem" not in people or people["_sem"]["totais"]["itensPendentes"] == 0
     assert data["totais"]["comentarios"] == 1 and data["totais"]["cardsConcluidos"] == 1
+
+
+def test_item_counts_on_its_deadline(client):
+    """Concluido conta no dia do prazo, nao no dia em que foi marcado."""
+    def itens(day, pid, key):
+        data = client.get(f"/api/resumo?data={day}").get_json()
+        row = next((p for p in data["pessoas"] if p["pessoa"]["id"] == pid), None)
+        return [i["texto"] for i in row[key]] if row else []
+
+    # Marcado no dia 13, prazo no dia 20
+    assert itens("2026-11-13", BETO, "itensConcluidos") == []
+    assert itens("2026-11-20", BETO, "itensConcluidos") == ["Medir obra"]
+    # Em aberto com prazo no dia 9: pendente do dia 9 ("hoje") e atrasado depois
+    data = client.get("/api/resumo?data=2026-11-09").get_json()
+    ana = next(p for p in data["pessoas"] if p["pessoa"]["id"] == ANA)
+    assert [(i["texto"], i["status"]) for i in ana["itensPendentes"]] == [("Fechar compra", "hoje")]
+    assert itens("2026-11-08", ANA, "itensPendentes") == []
 
 
 def test_day_summary_other_day(client):
@@ -163,7 +182,8 @@ def test_dashboard_metrics(app, client):
     data = metrics.collect(boards, trello, powerup, start, end)
     out = metrics.dashboard(data, date(2026, 11, 14), 7, TZ)
     k = out["kpis"]
-    assert k["cardsConcluidos"] == 1 and k["itensConcluidos"] == 2 and k["comentarios"] == 2
+    # Itens pelo prazo: "Cotar material" (11/11) entra; "Medir obra" (prazo 20/11) fica fora.
+    assert k["cardsConcluidos"] == 1 and k["itensConcluidos"] == 1 and k["comentarios"] == 2
     assert k["cardsAbertos"] == 1 and k["cardsAtrasados"] == 1
     assert k["itensTotal"] == 4 and k["itensFeitos"] == 2 and k["taxaChecklist"] == 50
     assert len(out["serie"]) == 7

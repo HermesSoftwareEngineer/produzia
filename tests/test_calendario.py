@@ -89,7 +89,8 @@ def test_calendario_month(cclient):
     assert i1["card"]["nome"] == "Orçamento" and i1["responsaveis"][0]["id"] == ANA
 
     assert by_id["item:i2"]["status"] == "atrasado"
-    assert (by_id["item:i4"]["prazo"], by_id["item:i4"]["concluidoEm"]) == ("2026-11-20", "2026-11-13")
+    # Concluido conta no dia do prazo, nao no dia em que foi marcado (13).
+    assert (by_id["item:i4"]["prazo"], by_id["item:i4"]["concluidoEm"]) == ("2026-11-20", "2026-11-20")
     assert (by_id["item:i5"]["prazo"], by_id["item:i5"]["status"]) == ("2026-11-16", "pendente")
     i6 = by_id["item:i6"]
     assert (i6["prazo"], i6["concluidoEm"]) == (None, "2026-11-14")
@@ -102,8 +103,8 @@ def test_calendario_month(cclient):
 def test_calendario_status_hoje_and_completion_range(cclient):
     data = get(cclient, "inicio=2026-11-12&fim=2026-11-15")
     ids = [t["id"] for t in data["tarefas"]]
-    # i4 entra pela conclusao (dia 13) mesmo com prazo no dia 20; i6 pela conclusao no dia 14.
-    assert ids == ["card:" + CARD3, "item:i4", "item:i6"]
+    # i4 (marcado no dia 13, prazo 20) fica fora; i6 nao tem data e entra pelo dia em que foi marcado.
+    assert ids == ["card:" + CARD3, "item:i6"]
     # As atrasadas vem sempre, independente do intervalo.
     assert [t["id"] for t in data["atrasadas"]] == ["card:" + CARD1, "item:i2"]
 

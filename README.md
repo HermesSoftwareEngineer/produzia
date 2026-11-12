@@ -93,10 +93,12 @@ O campo `atualizadoPor` vale `web` (sessão) ou `mcp` (chave de serviço).
   entrega marcada como concluída. Conta para os membros do card (ou para quem moveu, se não houver membros).
 - **Card pendente**: card aberto fora das listas de concluído e sem entrega concluída.
   Atrasado quando a data de entrega já passou. Usa o estado atual do card.
-- **Item concluído no dia**: `concluidoEm` do Power-Up dentro do dia (fuso `TIMEZONE`).
-  Conta para o responsável do item; sem responsável, para quem marcou.
-- **Item pendente no dia**: criado até o fim do dia e não concluído até o fim do dia, em cards abertos.
-  Atrasado quando a data de fim é anterior ao dia.
+- **Itens contam pelo prazo** (data de fim do item; a de início, se for a única), não pelo dia em que
+  alguém marcou o check. Vale para o Resumo do dia, o Dashboard e o Calendário.
+- **Item concluído no dia D**: marcado como feito e com prazo em D. Conta para o responsável;
+  sem responsável, para quem marcou. Só um item feito sem nenhuma data usa o dia em que foi marcado.
+- **Item pendente no dia D**: em aberto, em card aberto, com prazo em D ("vence no dia") ou antes de D
+  ("atrasado"). Itens em aberto sem prazo, ou com prazo depois de D, não entram no dia.
 - **Comentários, cards criados e movimentações**: ações do Trello feitas pela pessoa no dia.
 
 ## Desenvolvimento

@@ -52,7 +52,8 @@ def _tarefas(bd, people, tz, hoje):
             "inicio": inicio,
             "prazo": prazo,
             "concluido": feito,
-            "concluidoEm": _local_day(item.get("concluidoEm"), tz) if feito else None,
+            # Concluido conta no dia do prazo; so sem nenhuma data vale o dia em que foi marcado.
+            "concluidoEm": (prazo or _local_day(item.get("concluidoEm"), tz)) if feito else None,
             "status": _status(feito, prazo, hoje),
         })
 
