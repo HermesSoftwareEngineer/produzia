@@ -9,15 +9,24 @@ import { boardsQuery } from '../api.js'
 import { useBoards } from '../boards.jsx'
 import { Avatar, Empty, ErrorBox, Icon, Kpi, Loading, Warnings } from '../components/ui.jsx'
 import { fmt, shortDate } from '../format.js'
+import { useTheme } from '../theme.jsx'
 import { useFetch } from '../useFetch.js'
 
 ChartJS.register(BarController, BarElement, LineController, LineElement, PointElement, CategoryScale,
   LinearScale, Tooltip, Legend, Filler)
 ChartJS.defaults.font.family = 'Inter, system-ui, sans-serif'
-ChartJS.defaults.color = '#64748b'
 
 const PERIODS = [7, 14, 30, 60, 90]
-const C = { itens: '#0d9488', cards: '#6366f1', comentarios: '#f59e0b', criados: '#94a3b8' }
+const PALETTE = {
+  light: { itens: '#0d9488', cards: '#6366f1', comentarios: '#f59e0b', horas: '#5eead4', text: '#64748b', grid: '#eef2f7' },
+  dark: { itens: '#2dd4bf', cards: '#818cf8', comentarios: '#fbbf24', horas: '#1f6f68', text: '#8b9aa3', grid: '#1c2830' },
+}
+
+function usePalette() {
+  const { theme } = useTheme()
+  const c = PALETTE[theme]
+  return c
+}
 
 export default function Dashboard() {
   const { boards, loaded, selected, version } = useBoards()
@@ -97,18 +106,19 @@ function DashboardBody({ data }) {
   )
 }
 
-const baseOptions = {
+const baseOptions = (c) => ({
   responsive: true,
   maintainAspectRatio: false,
   interaction: { mode: 'index', intersect: false },
-  plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true } } },
+  plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, color: c.text } } },
   scales: {
-    x: { stacked: true, grid: { display: false } },
-    y: { stacked: true, beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#eef2f7' } },
+    x: { stacked: true, grid: { display: false }, ticks: { color: c.text }, border: { color: c.grid } },
+    y: { stacked: true, beginAtZero: true, ticks: { precision: 0, color: c.text }, grid: { color: c.grid }, border: { color: c.grid } },
   },
-}
+})
 
 function DailyChart({ serie }) {
+  const C = usePalette()
   const labels = serie.map((d) => shortDate(d.data))
   const chart = {
     labels,
@@ -119,28 +129,31 @@ function DailyChart({ serie }) {
       { label: 'Cards concluídos', data: serie.map((d) => d.cardsConcluidos), backgroundColor: C.cards, borderRadius: 4, stack: 'done' },
     ],
   }
+  const base = baseOptions(C)
   const options = {
-    ...baseOptions,
+    ...base,
     scales: {
-      ...baseOptions.scales,
-      y2: { position: 'right', beginAtZero: true, ticks: { precision: 0 }, grid: { display: false } },
+      ...base.scales,
+      y2: { position: 'right', beginAtZero: true, ticks: { precision: 0, color: C.text }, grid: { display: false }, border: { color: C.grid } },
     },
   }
   return <Bar data={chart} options={options} />
 }
 
 function HoursChart({ horas }) {
+  const C = usePalette()
   const first = Math.min(7, ...horas.map((v, h) => (v ? h : 24)))
   const last = Math.max(19, ...horas.map((v, h) => (v ? h : -1)))
   const range = horas.slice(first, last + 1)
   const chart = {
     labels: range.map((_, i) => `${first + i}h`),
-    datasets: [{ label: 'Ações', data: range, backgroundColor: '#5eead4', hoverBackgroundColor: C.itens, borderRadius: 4 }],
+    datasets: [{ label: 'Ações', data: range, backgroundColor: C.horas, hoverBackgroundColor: C.itens, borderRadius: 4 }],
   }
-  return <Bar data={chart} options={{ ...baseOptions, plugins: { legend: { display: false } } }} />
+  return <Bar data={chart} options={{ ...baseOptions(C), plugins: { legend: { display: false } } }} />
 }
 
 function Ranking({ rows }) {
+  const C = usePalette()
   if (!rows.length) return <p className="muted">Sem atividade no período.</p>
   const max = Math.max(1, ...rows.map((r) => r.itensConcluidos + r.cardsConcluidos + r.comentarios))
   return (

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { Icon } from '../components/ui.jsx'
+import { ThemeSwitch } from '../theme.jsx'
 
 export default function Login({ onLogin }) {
   const [form, setForm] = useState({ usuario: '', senha: '' })
@@ -27,6 +28,7 @@ export default function Login({ onLogin }) {
 
   return (
     <div className="login-page">
+      <ThemeSwitch />
       <form className="login-card" onSubmit={submit}>
         <div className="brand brand-lg"><span className="brand-mark"><Icon name="bars" /></span><span>Produzia</span></div>
         <p className="muted">Produtividade dos seus quadros do Trello, por pessoa e por dia.</p>

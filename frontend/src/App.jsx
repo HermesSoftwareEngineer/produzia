@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import Login from './pages/Login.jsx'
 import Quadros from './pages/Quadros.jsx'
 import Resumo from './pages/Resumo.jsx'
+import { ThemeSwitch } from './theme.jsx'
 
 const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/quadros': 'Quadros' }
 
@@ -69,6 +70,7 @@ function Shell({ onLogout }) {
           <NavLink to="/resumo"><Icon name="calendar" /><span>Resumo do dia</span></NavLink>
           <NavLink to="/quadros"><Icon name="board" /><span>Quadros</span></NavLink>
         </nav>
+        <ThemeSwitch />
         <button className="logout" type="button" onClick={logout}><Icon name="logout" /><span>Sair</span></button>
       </aside>
       <div className="main">

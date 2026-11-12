@@ -7,6 +7,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>Produzia</title>
+    <script>
+      // Aplica o tema antes do React montar, sem piscar a tela.
+      (function () {
+        var m = 'sistema'
+        try { m = localStorage.getItem('produzia.tema') || 'sistema' } catch (e) {}
+        var dark = m === 'escuro' || (m !== 'claro' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
