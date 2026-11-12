@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { boardsQuery } from '../api.js'
 import { useBoards } from '../boards.jsx'
 import { Avatar, CardLink, Empty, ErrorBox, Icon, Loading, Status, Warnings } from '../components/ui.jsx'
-import { addDays, fmt, longDate, toIso, weekday } from '../format.js'
+import { addDays, fmt, longDate, shortDate, toIso, weekday } from '../format.js'
+import { PDF_SECTIONS, buildFeeds, pendingGroups } from '../resumo.js'
 import { useFetch } from '../useFetch.js'
 
 export default function Resumo() {
@@ -13,6 +14,7 @@ export default function Resumo() {
   const day = params.get('data') || today
   const [onlyActive, setOnlyActive] = useState(false)
   const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(() => new Set())
 
   const setDay = (iso) => setParams(iso === today ? {} : { data: iso }, { replace: true })
   const q = [`data=${day}`, boardsQuery(selected)].filter(Boolean).join('&')
@@ -31,66 +33,92 @@ export default function Resumo() {
   const people = useMemo(() => {
     if (!data) return []
     const term = search.trim().toLowerCase()
-    return data.pessoas.filter((p) => {
-      if (onlyActive && !p.atividade) return false
-      return !term || p.pessoa.nome.toLowerCase().includes(term) || (p.pessoa.username || '').includes(term)
-    })
+    return data.pessoas
+      .filter((p) => !onlyActive || p.atividade)
+      .filter((p) => !term || p.pessoa.nome.toLowerCase().includes(term) || (p.pessoa.username || '').includes(term))
+      .map((p) => ({ ...p, feeds: buildFeeds(p) }))
   }, [data, onlyActive, search])
 
   if (loaded && !boards.length) {
     return <Empty title="Nenhum quadro cadastrado">Cadastre um quadro em <Link to="/quadros">Quadros</Link> para ver o resumo.</Empty>
   }
 
+  const toggle = (id) => setOpen((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  const allOpen = people.length > 0 && people.every((p) => open.has(p.pessoa.id))
+  const boardsLabel = selected.length
+    ? boards.filter((b) => selected.includes(b.id)).map((b) => b.nome).join(', ')
+    : `Todos os quadros (${boards.length})`
+  const relative = day === today ? 'Hoje' : day === addDays(today, -1) ? 'Ontem' : weekday(day)
   const t = data?.totais
+
   return (
-    <div className="page">
-      <div className="day-nav">
-        <button className="btn btn-ghost btn-icon" type="button" onClick={() => setDay(addDays(day, -1))} title="Dia anterior (←)">
-          <Icon name="left" />
-        </button>
-        <div className="day-picker">
-          <input type="date" value={day} max={today} onChange={(e) => e.target.value && setDay(e.target.value)} />
-          <div className="day-label">
+    <div className="page rs">
+      <div className="rs-head">
+        <div className="day-nav">
+          <button className="btn btn-ghost btn-icon" type="button" onClick={() => setDay(addDays(day, -1))} title="Dia anterior (←)">
+            <Icon name="left" />
+          </button>
+          <label className="day-title" title="Escolher data">
             <strong>{longDate(day)}</strong>
-            <span>{day === today ? 'Hoje' : day === addDays(today, -1) ? 'Ontem' : weekday(day)}</span>
-          </div>
+            <span>{relative}</span>
+            <input type="date" value={day} max={today} aria-label="Data do resumo"
+              onChange={(e) => e.target.value && setDay(e.target.value)} />
+          </label>
+          <button className="btn btn-ghost btn-icon" type="button" onClick={() => setDay(addDays(day, 1))}
+            disabled={day >= today} title="Próximo dia (→)">
+            <Icon name="right" />
+          </button>
+          {day !== today && <button className="today-link" type="button" onClick={() => setDay(today)}>Hoje</button>}
         </div>
-        <button className="btn btn-ghost btn-icon" type="button" onClick={() => setDay(addDays(day, 1))}
-          disabled={day >= today} title="Próximo dia (→)">
-          <Icon name="right" />
-        </button>
-        {day !== today && <button className="btn btn-ghost" type="button" onClick={() => setDay(today)}>Hoje</button>}
+        <div className="rs-actions">
+          {loading && data && <span className="spinner sm" title="Atualizando" />}
+          <ExportButton disabled={!data || loading} onExport={async (sections) => {
+            const { exportResumoPdf } = await import('../pdf.js')
+            exportResumoPdf({ data, people, day, boardsLabel, sections, filtered: Boolean(search.trim() || onlyActive) })
+          }} />
+        </div>
       </div>
 
       <ErrorBox error={error} />
       {data && <Warnings items={data.avisos} />}
 
       {t && (
-        <div className="totals-strip">
-          <Total icon="check" label="Itens concluídos" value={t.itensConcluidos} tone="good" />
-          <Total icon="card" label="Cards concluídos" value={t.cardsConcluidos} tone="good" />
-          <Total icon="comment" label="Comentários" value={t.comentarios} />
-          <Total icon="plus" label="Cards criados" value={t.cardsCriados} />
-          <Total icon="circle" label="Itens pendentes" value={t.itensPendentes} sub={t.itensAtrasados ? `${fmt(t.itensAtrasados)} atrasados` : null} />
-          <Total icon="card" label="Cards pendentes" value={t.cardsPendentes} sub={t.cardsAtrasados ? `${fmt(t.cardsAtrasados)} atrasados` : null} />
+        <div className="rs-summary">
+          <Metric value={t.itensConcluidos} label="itens de checklist feitos" good />
+          <Metric value={t.cardsConcluidos} label="cards concluídos" good />
+          <Metric value={t.comentarios} label="comentários" />
+          <Metric value={t.itensPendentes} label="itens pendentes" late={t.itensAtrasados} />
+          <Metric value={t.cardsPendentes} label="cards pendentes" late={t.cardsAtrasados} />
         </div>
       )}
 
-      <div className="toolbar">
+      <div className="rs-toolbar">
         <div className="search">
           <Icon name="search" />
-          <input placeholder="Filtrar pessoa…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input placeholder="Buscar pessoa" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <label className="toggle">
           <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />
-          <span>Só quem teve atividade no dia</span>
+          <span>Só quem teve atividade</span>
         </label>
-        {loading && data && <span className="muted small"><span className="spinner sm" /> Atualizando…</span>}
+        {people.length > 0 && (
+          <button className="link-btn" type="button"
+            onClick={() => setOpen(allOpen ? new Set() : new Set(people.map((p) => p.pessoa.id)))}>
+            {allOpen ? 'Recolher todos' : 'Expandir todos'}
+          </button>
+        )}
       </div>
 
       {loading && !data ? <Loading /> : (
-        <div className="people-grid">
-          {people.map((p) => <PersonCard key={p.pessoa.id} row={p} />)}
+        <div className="rs-list">
+          {people.map((p) => (
+            <Person key={p.pessoa.id} row={p} open={open.has(p.pessoa.id)} onToggle={() => toggle(p.pessoa.id)} />
+          ))}
           {data && !people.length && <Empty title="Ninguém por aqui">Nenhuma pessoa com dados para esse filtro.</Empty>}
         </div>
       )}
@@ -98,152 +126,167 @@ export default function Resumo() {
   )
 }
 
-function Total({ icon, label, value, sub, tone }) {
+function Metric({ value, label, good, late }) {
   return (
-    <div className={`total ${tone ? `total-${tone}` : ''}`}>
-      <Icon name={icon} />
-      <div>
-        <strong>{fmt(value)}</strong>
-        <span>{label}</span>
-        {sub && <em>{sub}</em>}
-      </div>
-    </div>
-  )
-}
-
-function PersonCard({ row }) {
-  const { pessoa, totais: t } = row
-  const others = t.cardsCriados + t.movimentacoes
-  return (
-    <article className="person">
-      <header className="person-head">
-        <Avatar pessoa={pessoa} size={44} />
-        <div className="person-name">
-          <strong>{pessoa.nome}</strong>
-          {pessoa.username && <span>@{pessoa.username}</span>}
-        </div>
-        {row.atividade === 0 && <span className="chip chip-idle">Sem atividade</span>}
-      </header>
-
-      <div className="person-stats">
-        <Stat value={t.itensConcluidos} label="itens feitos" tone="good" />
-        <Stat value={t.cardsConcluidos} label="cards concluídos" tone="good" />
-        <Stat value={t.comentarios} label="comentários" />
-        <Stat value={t.itensPendentes} label="itens pendentes" tone={t.itensAtrasados ? 'bad' : undefined}
-          hint={t.itensAtrasados ? `${t.itensAtrasados} atrasados` : undefined} />
-        <Stat value={t.cardsPendentes} label="cards pendentes" tone={t.cardsAtrasados ? 'bad' : undefined}
-          hint={t.cardsAtrasados ? `${t.cardsAtrasados} atrasados` : undefined} />
-      </div>
-
-      <Section title="Itens de checklist concluídos" count={t.itensConcluidos} open tone="good">
-        {row.itensConcluidos.map((i, n) => (
-          <li key={n} className="entry">
-            <Icon name="check" className="entry-icon good" />
-            <div className="entry-body">
-              <span className="entry-text">{i.texto}</span>
-              <CardLink card={i.card} />
-              {i.concluidoPor && <span className="entry-note">marcado por {i.concluidoPor}</span>}
-            </div>
-            <time>{i.hora}</time>
-          </li>
-        ))}
-      </Section>
-
-      <Section title="Cards concluídos" count={t.cardsConcluidos} open tone="good">
-        {row.cardsConcluidos.map((c, n) => (
-          <li key={n} className="entry">
-            <Icon name="card" className="entry-icon good" />
-            <div className="entry-body">
-              <CardLink card={c.card} />
-              <span className="entry-note">{c.via}</span>
-            </div>
-            <time>{c.hora}</time>
-          </li>
-        ))}
-      </Section>
-
-      <Section title="Comentários" count={t.comentarios} open={t.comentarios <= 3}>
-        {row.comentarios.map((c, n) => (
-          <li key={n} className="entry">
-            <Icon name="comment" className="entry-icon" />
-            <div className="entry-body">
-              <CardLink card={c.card} />
-              <p className="comment">{c.texto}</p>
-            </div>
-            <time>{c.hora}</time>
-          </li>
-        ))}
-      </Section>
-
-      <Section title="Itens pendentes" count={t.itensPendentes} badge={t.itensAtrasados ? `${t.itensAtrasados} atrasados` : null}>
-        {row.itensPendentes.map((i, n) => (
-          <li key={n} className="entry">
-            <Icon name="circle" className="entry-icon muted" />
-            <div className="entry-body">
-              <span className="entry-text">{i.texto}</span>
-              <CardLink card={i.card} />
-            </div>
-            <Status status={i.status} date={i.dataFim} />
-          </li>
-        ))}
-      </Section>
-
-      <Section title="Cards pendentes" count={t.cardsPendentes} badge={t.cardsAtrasados ? `${t.cardsAtrasados} atrasados` : null}>
-        {row.cardsPendentes.map((c, n) => (
-          <li key={n} className="entry">
-            <Icon name="card" className="entry-icon muted" />
-            <div className="entry-body"><CardLink card={c.card} /></div>
-            <Status status={c.status} date={c.due} />
-          </li>
-        ))}
-      </Section>
-
-      <Section title="Outras atividades" count={others}>
-        {row.cardsCriados.map((c, n) => (
-          <li key={`c${n}`} className="entry">
-            <Icon name="plus" className="entry-icon" />
-            <div className="entry-body">
-              <CardLink card={c.card} />
-              <span className="entry-note">criou o card{c.lista ? ` em ${c.lista}` : ''}</span>
-            </div>
-            <time>{c.hora}</time>
-          </li>
-        ))}
-        {row.movimentacoes.map((m, n) => (
-          <li key={`m${n}`} className="entry">
-            <Icon name="move" className="entry-icon" />
-            <div className="entry-body">
-              <CardLink card={m.card} />
-              <span className="entry-note">moveu de {m.de} para {m.para}</span>
-            </div>
-            <time>{m.hora}</time>
-          </li>
-        ))}
-      </Section>
-    </article>
-  )
-}
-
-function Stat({ value, label, tone, hint }) {
-  return (
-    <div className={`stat ${value && tone ? `stat-${tone}` : ''} ${!value ? 'stat-zero' : ''}`} title={hint}>
+    <div className={`metric ${good && value ? 'metric-good' : ''}`}>
       <strong>{fmt(value)}</strong>
       <span>{label}</span>
+      {late > 0 && <em>{fmt(late)} atrasados</em>}
     </div>
   )
 }
 
-function Section({ title, count, open = false, badge, tone, children }) {
-  if (!count) return null
+function Person({ row, open, onToggle }) {
+  const { pessoa, totais: t, feeds } = row
+  const done = feeds.concluidos.length
+  const pending = feeds.pendentes.length
+  const late = t.itensAtrasados + t.cardsAtrasados
+  const pct = done + pending ? Math.round((100 * done) / (done + pending)) : null
+
   return (
-    <details className={`section ${tone ? `section-${tone}` : ''}`} open={open}>
-      <summary>
+    <section className={`rs-person ${open ? 'open' : ''}`}>
+      <button className="rs-row" type="button" onClick={onToggle} aria-expanded={open}>
+        <div className="rs-who">
+          <Avatar pessoa={pessoa} size={36} />
+          <div className="truncate">
+            <strong>{pessoa.nome}</strong>
+            {row.atividade === 0 && <div className="idle">Sem atividade no dia</div>}
+          </div>
+        </div>
+        <div className="rs-nums">
+          <Num value={done} label="feitos" good />
+          <Num value={pending} label="pendentes" late={late > 0} hint={late ? `${late} atrasados` : undefined} />
+          <Num value={t.comentarios} label="comentários" />
+        </div>
+        <div className="rs-progress" title="Concluídos sobre concluídos + pendentes">
+          {pct !== null && <>
+            <div className="bar"><span style={{ width: `${pct}%` }} /></div>
+            <small>{pct}% do dia</small>
+          </>}
+        </div>
         <Icon name="chevron" className="caret" />
-        <span>{title}</span>
-        <span className="count">{fmt(count)}</span>
-        {badge && <span className="chip chip-atrasado">{badge}</span>}
-      </summary>
-      <ul className="entries">{children}</ul>
-    </details>
+      </button>
+      {open && <PersonDetail feeds={feeds} late={late} />}
+    </section>
+  )
+}
+
+function Num({ value, label, good, late, hint }) {
+  return (
+    <span className={`rs-num ${!value ? 'zero' : good ? 'good' : ''}`} title={hint}>
+      <b>{fmt(value)}</b>{label}{late && <i className="late-dot" />}
+    </span>
+  )
+}
+
+function PersonDetail({ feeds, late }) {
+  const tabs = [
+    { key: 'concluidos', label: 'Concluídos', n: feeds.concluidos.length },
+    { key: 'pendentes', label: 'Pendentes', n: feeds.pendentes.length, late },
+    { key: 'comentarios', label: 'Comentários', n: feeds.comentarios.length },
+    { key: 'atividade', label: 'Outras atividades', n: feeds.atividade.length },
+  ]
+  const [tab, setTab] = useState(() => (tabs.find((x) => x.n) || tabs[0]).key)
+
+  return (
+    <div className="rs-detail">
+      <div className="tabs" role="tablist">
+        {tabs.map((x) => (
+          <button key={x.key} type="button" role="tab" aria-selected={tab === x.key}
+            className={tab === x.key ? 'active' : ''} onClick={() => setTab(x.key)}>
+            {x.label}<span className={`n ${x.late ? 'late' : ''}`}>{x.n}</span>
+          </button>
+        ))}
+      </div>
+      {tab === 'concluidos' && <Feed items={feeds.concluidos} empty="Nada concluído neste dia." />}
+      {tab === 'pendentes' && <PendingFeed items={feeds.pendentes} />}
+      {tab === 'comentarios' && <Feed items={feeds.comentarios} empty="Nenhum comentário neste dia." />}
+      {tab === 'atividade' && <Feed items={feeds.atividade} empty="Nenhuma outra atividade." />}
+    </div>
+  )
+}
+
+function Feed({ items, empty }) {
+  if (!items.length) return <p className="feed-empty">{empty}</p>
+  return <ul className="feed">{items.map((e, i) => <FeedItem key={i} e={e} />)}</ul>
+}
+
+function PendingFeed({ items }) {
+  if (!items.length) return <p className="feed-empty">Nenhuma pendência.</p>
+  return (
+    <ul className="feed">
+      {pendingGroups(items).map((g) => (
+        <li key={g.key}>
+          <div className={`feed-group ${g.key === 'atrasado' ? 'late' : ''}`}>{g.label} · {g.items.length}</div>
+          <ul className="feed">{g.items.map((e, i) => <FeedItem key={i} e={e} grouped />)}</ul>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function FeedItem({ e, grouped }) {
+  return (
+    <li className={`feed-item ${grouped ? 'no-time' : ''}`}>
+      {!grouped && <time>{e.hora || ''}</time>}
+      <div className="feed-main">
+        <span className="feed-title">
+          {e.tipo && <span className={`feed-kind ${e.tipo === 'Card' ? 'card' : ''}`}>{e.tipo}</span>}
+          {e.titulo}
+        </span>
+        {e.citacao && <p className="feed-quote">{e.citacao}</p>}
+        {e.nota && <span className="feed-note">{e.nota}</span>}
+        {e.card && <CardLink card={e.card} />}
+      </div>
+      {grouped
+        ? <span className={`feed-due ${e.status === 'atrasado' ? 'late' : ''}`}>{e.prazo ? `prazo ${shortDate(e.prazo)}` : ''}</span>
+        : <span>{e.status && <Status status={e.status} date={e.prazo} />}</span>}
+    </li>
+  )
+}
+
+function ExportButton({ disabled, onExport }) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [sections, setSections] = useState(() => Object.fromEntries(PDF_SECTIONS.map((s) => [s.key, true])))
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  async function run() {
+    setBusy(true)
+    try {
+      await onExport(sections)
+      setOpen(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="dropdown" ref={ref}>
+      <button className="btn btn-ghost" type="button" disabled={disabled} onClick={() => setOpen(!open)}>
+        <Icon name="download" />Exportar PDF
+      </button>
+      {open && (
+        <div className="dropdown-menu export-menu">
+          <p className="export-title">Incluir no relatório</p>
+          {PDF_SECTIONS.map((s) => (
+            <label className="check-row" key={s.key}>
+              <input type="checkbox" checked={sections[s.key]}
+                onChange={(e) => setSections({ ...sections, [s.key]: e.target.checked })} />
+              <span>{s.label}</span>
+            </label>
+          ))}
+          <button className="btn btn-primary btn-block" type="button" disabled={busy || !Object.values(sections).some(Boolean)} onClick={run}>
+            {busy ? 'Gerando…' : 'Baixar PDF'}
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
