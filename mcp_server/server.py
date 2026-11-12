@@ -1,17 +1,23 @@
 """Servidor MCP do Produzia (Streamable HTTP em /mcp).
 
-Fala com a API REST do Produzia usando a chave de servico (X-API-Key) e exige dos
-clientes MCP o header "Authorization: Bearer <MCP_TOKEN>".
+Fala com a API REST do Produzia usando a chave de servico (X-API-Key). Os clientes MCP
+se autenticam por OAuth 2.0 (ver oauth.py) ou pelo token fixo "Authorization: Bearer <MCP_TOKEN>".
 """
-import hmac
 import json
 import os
 from typing import Annotated, Any
 
 import httpx
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
-from pydantic import Field
+from pydantic import AnyHttpUrl, Field
+from starlette.responses import JSONResponse
+
+try:
+    from .oauth import SCOPE, ProduziaOAuthProvider
+except ImportError:  # executado como script dentro do container
+    from oauth import SCOPE, ProduziaOAuthProvider
 
 INSTRUCOES = """\
 Produzia é o painel de produtividade dos quadros do Trello da equipe. Aqui você consulta os
@@ -224,52 +230,54 @@ def build_server(api: ProduziaAPI, **settings) -> FastMCP:
     return mcp
 
 
-class BearerAuth:
-    """Middleware ASGI: exige Authorization: Bearer <token>; /health fica livre."""
-
-    def __init__(self, app, token):
-        self.app = app
-        self.token = (token or "").encode()
-
-    def _ok(self, scope):
-        headers = dict(scope.get("headers") or [])
-        auth = headers.get(b"authorization", b"")
-        scheme, _, value = auth.partition(b" ")
-        return bool(self.token) and scheme.lower() == b"bearer" and hmac.compare_digest(value.strip(), self.token)
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            if scope["path"] == "/health":
-                return await _json(send, 200, {"status": "ok"})
-            if not self._ok(scope):
-                return await _json(send, 401, {"erro": "Token inválido."},
-                                   [(b"www-authenticate", b'Bearer realm="produzia"')])
-        return await self.app(scope, receive, send)
-
-
-async def _json(send, status, payload, extra=()):
-    body = json.dumps(payload, ensure_ascii=False).encode()
-    headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()), *extra]
-    await send({"type": "http.response.start", "status": status, "headers": headers})
-    await send({"type": "http.response.body", "body": body})
-
-
 def create_app(env: dict[str, Any] | None = None, transport=None):
     env = env if env is not None else os.environ
     api = ProduziaAPI(env.get("PRODUZIA_API_URL", "http://produzia:5000/api"),
                       env.get("PRODUZIA_API_KEY", ""), transport=transport)
-    # host 0.0.0.0: atras do Traefik o Host e o dominio publico; a protecao e o bearer token.
+    public_url = env.get("PUBLIC_URL", "https://produzia.olimpo-services.com.br").rstrip("/")
+    provider = ProduziaOAuthProvider(
+        public_url=public_url,
+        db_path=env.get("OAUTH_DB_PATH", "/data/oauth.sqlite3"),
+        user=env.get("APP_USER", "admin"),
+        password=env.get("APP_PASSWORD", ""),
+        static_token=env.get("MCP_TOKEN", ""),
+    )
+    # OAuth 2.0 (claude.ai, desktop, celular): descoberta RFC 9728/8414, registro dinamico
+    # RFC 7591, PKCE. O token fixo MCP_TOKEN continua valendo para clientes com header.
+    auth = AuthSettings(
+        issuer_url=AnyHttpUrl(public_url),
+        resource_server_url=AnyHttpUrl(f"{public_url}/mcp"),
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True, valid_scopes=[SCOPE], default_scopes=[SCOPE]),
+        revocation_options=RevocationOptions(enabled=True),
+        required_scopes=[SCOPE],
+    )
+    # host 0.0.0.0: atras do Traefik o Host e o dominio publico.
     # Stateless: cada POST e independente (sobrevive a restart do container sem sessao perdida).
     # Respostas em SSE: json_response=True devolve corpo vazio no uvicorn com mcp 1.27/starlette 1.0.
-    mcp = build_server(api, host="0.0.0.0", stateless_http=True, streamable_http_path="/mcp")
-    return BearerAuth(mcp.streamable_http_app(), env.get("MCP_TOKEN", ""))
+    mcp = build_server(api, host="0.0.0.0", stateless_http=True, streamable_http_path="/mcp",
+                       auth_server_provider=provider, auth=auth)
+
+    @mcp.custom_route("/health", methods=["GET"])
+    async def health(_request):
+        return JSONResponse({"status": "ok"})
+
+    @mcp.custom_route("/oauth/login", methods=["GET"])
+    async def login_page(request):
+        return await provider.login_page(request)
+
+    @mcp.custom_route("/oauth/login", methods=["POST"])
+    async def login_submit(request):
+        return await provider.login_submit(request)
+
+    return mcp.streamable_http_app()
 
 
 def main():
     import uvicorn
 
-    if not os.environ.get("MCP_TOKEN"):
-        raise SystemExit("Defina MCP_TOKEN.")
+    if not os.environ.get("APP_PASSWORD"):
+        raise SystemExit("Defina APP_PASSWORD (login da autorizacao OAuth).")
     uvicorn.run(create_app(), host="0.0.0.0", port=int(os.environ.get("PORT", "8000")),
                 proxy_headers=True, forwarded_allow_ips="*")
 

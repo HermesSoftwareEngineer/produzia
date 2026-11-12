@@ -31,13 +31,25 @@ React + Vite (frontend/) ──> API Flask (app/) ──┬──> API do Trello
 O serviço `produzia-mcp` (pasta `mcp_server/`, SDK oficial `mcp` com FastMCP) expõe o Produzia
 para agentes de IA via **Streamable HTTP** em `https://produzia.olimpo-services.com.br/mcp`.
 Ele chama a API do Produzia pela rede docker (`PRODUZIA_API_URL=http://produzia:5000/api`)
-com o header `X-API-Key: $PRODUZIA_API_KEY`, e exige dos clientes `Authorization: Bearer $MCP_TOKEN`.
+com o header `X-API-Key: $PRODUZIA_API_KEY`.
 
-Conectar no Claude Code:
+### Autenticação
+
+- **OAuth 2.0** (Claude no navegador, desktop e celular): o cliente descobre o servidor de
+  autorização (`/.well-known/oauth-protected-resource/mcp` e `/.well-known/oauth-authorization-server`),
+  registra-se sozinho (`/register`) e o dono autoriza em `/oauth/login` com o usuário e a senha do
+  Produzia (`APP_USER`/`APP_PASSWORD`). Código com PKCE S256, access token de 24 h e refresh token de
+  90 dias com rotação. Clientes e tokens (só o hash) ficam em SQLite no volume `produzia-mcp-data`.
+- **Token fixo** `Authorization: Bearer $MCP_TOKEN`, para clientes configurados com header.
+
+No claude.ai: **Configurações → Conectores → Adicionar conector personalizado**, URL
+`https://produzia.olimpo-services.com.br/mcp` (sem client ID/secret). O desktop e o app usam o
+mesmo conector da conta.
+
+Conectar no Claude Code com o token fixo:
 
 ```bash
-claude mcp add --transport http produzia https://produzia.olimpo-services.com.br/mcp \
-  --header "Authorization: Bearer <MCP_TOKEN>"
+claude mcp add --transport http produzia https://produzia.olimpo-services.com.br/mcp   --header "Authorization: Bearer <MCP_TOKEN>"
 ```
 
 Ferramentas:

@@ -9,9 +9,10 @@ WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY server.py .
+COPY server.py oauth.py ./
 
-RUN useradd --create-home --uid 1000 app
+# /data guarda clientes e tokens OAuth (volume no compose).
+RUN useradd --create-home --uid 1000 app && mkdir -p /data && chown app:app /data
 USER app
 
 EXPOSE 8000

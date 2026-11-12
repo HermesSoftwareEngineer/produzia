@@ -117,8 +117,9 @@ def test_tools_list_schema(flask_app):
     assert "flowchart TD" in schema["properties"]["fluxograma_mermaid"]["description"]
 
 
-def test_http_endpoint_requires_bearer(flask_app):
-    env = {"PRODUZIA_API_URL": "http://produzia/api", "PRODUZIA_API_KEY": KEY, "MCP_TOKEN": TOKEN}
+def test_http_endpoint_requires_bearer(flask_app, tmp_path):
+    env = {"PRODUZIA_API_URL": "http://produzia/api", "PRODUZIA_API_KEY": KEY, "MCP_TOKEN": TOKEN,
+           "OAUTH_DB_PATH": str(tmp_path / "oauth.sqlite3")}
     asgi = server.create_app(env, transport=FlaskTransport(flask_app.test_client()))
     accept = {"Accept": "application/json, text/event-stream"}
     init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
@@ -140,7 +141,8 @@ def sse(response):
     return json.loads(data[-1])
 
 
-def test_empty_token_rejects_everything(flask_app):
-    asgi = server.create_app({"MCP_TOKEN": "", "PRODUZIA_API_KEY": KEY})
+def test_empty_token_rejects_everything(flask_app, tmp_path):
+    asgi = server.create_app({"MCP_TOKEN": "", "PRODUZIA_API_KEY": KEY,
+                              "OAUTH_DB_PATH": str(tmp_path / "oauth.sqlite3")})
     with TestClient(asgi) as tc:
         assert tc.post("/mcp", json={}, headers={"Authorization": "Bearer "}).status_code == 401

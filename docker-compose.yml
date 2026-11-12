@@ -47,6 +47,10 @@ services:
     environment:
       - PORT=8000
       - PRODUZIA_API_URL=http://produzia:5000/api
+      - PUBLIC_URL=https://produzia.olimpo-services.com.br
+      - OAUTH_DB_PATH=/data/oauth.sqlite3
+    volumes:
+      - produzia-mcp-data:/data
     depends_on:
       - produzia
     healthcheck:
@@ -65,7 +69,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=olimpo-net"
-      - "traefik.http.routers.produzia-mcp.rule=Host(`produzia.olimpo-services.com.br`) && PathPrefix(`/mcp`)"
+      # /mcp e todo o OAuth 2.0: descoberta (.well-known), registro, autorizacao, token e login.
+      - "traefik.http.routers.produzia-mcp.rule=Host(`produzia.olimpo-services.com.br`) && (PathPrefix(`/mcp`) || PathPrefix(`/.well-known/oauth-`) || PathPrefix(`/oauth/`) || Path(`/authorize`) || Path(`/token`) || Path(`/register`) || Path(`/revoke`))"
       - "traefik.http.routers.produzia-mcp.priority=100"
       - "traefik.http.routers.produzia-mcp.entrypoints=websecure"
       - "traefik.http.routers.produzia-mcp.tls.certresolver=letsencrypt"
@@ -76,6 +81,7 @@ services:
 
 volumes:
   produzia-data:
+  produzia-mcp-data:
 
 networks:
   olimpo-net:
