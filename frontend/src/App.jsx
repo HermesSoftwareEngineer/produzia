@@ -5,12 +5,13 @@ import { BoardsProvider, useBoards } from './boards.jsx'
 import BoardFilter from './components/BoardFilter.jsx'
 import { Icon } from './components/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
+import Gantt from './pages/Gantt.jsx'
 import Login from './pages/Login.jsx'
 import Quadros from './pages/Quadros.jsx'
 import Resumo from './pages/Resumo.jsx'
 import { ThemeSwitch } from './theme.jsx'
 
-const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/quadros': 'Quadros' }
+const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/quadros': 'Quadros', '/gantt': 'Cronograma' }
 
 export default function App() {
   const [user, setUser] = useState(undefined)
@@ -60,6 +61,8 @@ function Shell({ onLogout }) {
   }
 
   const showFilter = location.pathname !== '/quadros'
+  // O cronograma escolhe um quadro só, na própria página.
+  const showBoardFilter = showFilter && location.pathname !== '/gantt'
 
   return (
     <div className="shell">
@@ -68,6 +71,7 @@ function Shell({ onLogout }) {
         <nav>
           <NavLink to="/" end><Icon name="dashboard" /><span>Dashboard</span></NavLink>
           <NavLink to="/resumo"><Icon name="calendar" /><span>Resumo do dia</span></NavLink>
+          <NavLink to="/gantt"><Icon name="gantt" /><span>Cronograma</span></NavLink>
           <NavLink to="/quadros"><Icon name="board" /><span>Quadros</span></NavLink>
         </nav>
         <ThemeSwitch />
@@ -77,7 +81,7 @@ function Shell({ onLogout }) {
         <header className="topbar">
           <h1>{TITLES[location.pathname]}</h1>
           <div className="topbar-right">
-            {showFilter && <BoardFilter />}
+            {showBoardFilter && <BoardFilter />}
             {showFilter && (
               <button className={`btn btn-ghost btn-icon ${refreshing ? 'spin' : ''}`} type="button"
                 title="Buscar dados novos no Trello" onClick={reloadData}>
@@ -91,6 +95,7 @@ function Shell({ onLogout }) {
             <Route path="/" element={<Dashboard />} />
             <Route path="/resumo" element={<Resumo />} />
             <Route path="/quadros" element={<Quadros />} />
+            <Route path="/gantt" element={<Gantt />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

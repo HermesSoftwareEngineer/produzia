@@ -36,7 +36,7 @@ function iconPng(name, rgb, size = 96) {
   return iconCache.get(key)
 }
 
-function drawIcon(doc, name, x, y, size, rgb) {
+export function drawIcon(doc, name, x, y, size, rgb) {
   // O apelido faz o jsPDF incorporar cada icone uma vez so.
   doc.addImage(iconPng(name, rgb), 'PNG', x, y, size, size, `i-${name}-${rgb.join('-')}`, 'FAST')
 }
@@ -52,7 +52,7 @@ function drawBadge(doc, name, tone, x, y, size = 5) {
 
 // As fontes padrao do PDF so cobrem Latin-1/cp1252: remove emojis e simbolos fora disso.
 const CP1252_EXTRA = new Set('–—‘’“”•…€'.split(''))
-function clean(text) {
+export function clean(text) {
   if (!text) return ''
   return [...String(text).replace(/→/g, '->')]
     .filter((ch) => ch.charCodeAt(0) <= 255 || CP1252_EXTRA.has(ch))
