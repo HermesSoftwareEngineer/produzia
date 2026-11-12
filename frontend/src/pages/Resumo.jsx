@@ -89,11 +89,11 @@ export default function Resumo() {
 
       {t && (
         <div className="rs-summary">
-          <Metric value={t.itensConcluidos} label="itens de checklist feitos" good />
-          <Metric value={t.cardsConcluidos} label="cards concluídos" good />
-          <Metric value={t.comentarios} label="comentários" />
-          <Metric value={t.itensPendentes} label="itens pendentes" late={t.itensAtrasados} />
-          <Metric value={t.cardsPendentes} label="cards pendentes" late={t.cardsAtrasados} />
+          <Metric icon="item" value={t.itensConcluidos} label="itens de checklist feitos" good />
+          <Metric icon="card" value={t.cardsConcluidos} label="cards concluídos" good />
+          <Metric icon="comment" value={t.comentarios} label="comentários" />
+          <Metric icon="circle" value={t.itensPendentes} label="itens pendentes" late={t.itensAtrasados} />
+          <Metric icon="clock" value={t.cardsPendentes} label="cards pendentes" late={t.cardsAtrasados} />
         </div>
       )}
 
@@ -126,11 +126,11 @@ export default function Resumo() {
   )
 }
 
-function Metric({ value, label, good, late }) {
+function Metric({ icon, value, label, good, late }) {
   return (
     <div className={`metric ${good && value ? 'metric-good' : ''}`}>
       <strong>{fmt(value)}</strong>
-      <span>{label}</span>
+      <span className="metric-label"><Icon name={icon} />{label}</span>
       {late > 0 && <em>{fmt(late)} atrasados</em>}
     </div>
   )
@@ -154,9 +154,9 @@ function Person({ row, open, onToggle }) {
           </div>
         </div>
         <div className="rs-nums">
-          <Num value={done} label="feitos" good />
-          <Num value={pending} label="pendentes" late={late > 0} hint={late ? `${late} atrasados` : undefined} />
-          <Num value={t.comentarios} label="comentários" />
+          <Num icon="check" value={done} label="feitos" good />
+          <Num icon="clock" value={pending} label="pendentes" late={late > 0} hint={late ? `${late} atrasados` : undefined} />
+          <Num icon="comment" value={t.comentarios} label="comentários" />
         </div>
         <div className="rs-progress" title="Concluídos sobre concluídos + pendentes">
           {pct !== null && <>
@@ -171,20 +171,20 @@ function Person({ row, open, onToggle }) {
   )
 }
 
-function Num({ value, label, good, late, hint }) {
+function Num({ icon, value, label, good, late, hint }) {
   return (
     <span className={`rs-num ${!value ? 'zero' : good ? 'good' : ''}`} title={hint}>
-      <b>{fmt(value)}</b>{label}{late && <i className="late-dot" />}
+      <Icon name={icon} /><b>{fmt(value)}</b>{label}{late && <i className="late-dot" />}
     </span>
   )
 }
 
 function PersonDetail({ feeds, late }) {
   const tabs = [
-    { key: 'concluidos', label: 'Concluídos', n: feeds.concluidos.length },
-    { key: 'pendentes', label: 'Pendentes', n: feeds.pendentes.length, late },
-    { key: 'comentarios', label: 'Comentários', n: feeds.comentarios.length },
-    { key: 'atividade', label: 'Outras atividades', n: feeds.atividade.length },
+    { key: 'concluidos', icon: 'check', label: 'Concluídos', n: feeds.concluidos.length },
+    { key: 'pendentes', icon: 'clock', label: 'Pendentes', n: feeds.pendentes.length, late },
+    { key: 'comentarios', icon: 'comment', label: 'Comentários', n: feeds.comentarios.length },
+    { key: 'atividade', icon: 'move', label: 'Outras atividades', n: feeds.atividade.length },
   ]
   const [tab, setTab] = useState(() => (tabs.find((x) => x.n) || tabs[0]).key)
 
@@ -194,7 +194,7 @@ function PersonDetail({ feeds, late }) {
         {tabs.map((x) => (
           <button key={x.key} type="button" role="tab" aria-selected={tab === x.key}
             className={tab === x.key ? 'active' : ''} onClick={() => setTab(x.key)}>
-            {x.label}<span className={`n ${x.late ? 'late' : ''}`}>{x.n}</span>
+            <Icon name={x.icon} />{x.label}<span className={`n ${x.late ? 'late' : ''}`}>{x.n}</span>
           </button>
         ))}
       </div>
@@ -228,16 +228,16 @@ function PendingFeed({ items }) {
 function FeedItem({ e, grouped }) {
   return (
     <li className={`feed-item ${grouped ? 'no-time' : ''}`}>
-      {!grouped && <time>{e.hora || ''}</time>}
+      <span className={`feed-icon tone-${e.tom || 'muted'}`}><Icon name={e.icone || 'circle'} /></span>
       <div className="feed-main">
         <span className="feed-title">
-          {e.tipo && <span className={`feed-kind ${e.tipo === 'Card' ? 'card' : ''}`}>{e.tipo}</span>}
           {e.titulo}
         </span>
         {e.citacao && <p className="feed-quote">{e.citacao}</p>}
         {e.nota && <span className="feed-note">{e.nota}</span>}
         {e.card && <CardLink card={e.card} />}
       </div>
+      {!grouped && <time>{e.hora || ''}</time>}
       {grouped
         ? <span className={`feed-due ${e.status === 'atrasado' ? 'late' : ''}`}>{e.prazo ? `prazo ${shortDate(e.prazo)}` : ''}</span>
         : <span>{e.status && <Status status={e.status} date={e.prazo} />}</span>}
