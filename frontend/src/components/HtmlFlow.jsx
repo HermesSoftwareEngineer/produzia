@@ -9,6 +9,7 @@ const BASE_CSS = `
   --pz-soft:#f1f5f9; --pz-brand:#0f766e; --pz-good:#0d9488; --pz-bad:#dc2626; --pz-amber:#d97706; --pz-indigo:#6366f1; }
 :root[data-theme="dark"] { color-scheme: dark; --pz-ink:#e6edf0; --pz-muted:#8b9aa3; --pz-line:#24323a; --pz-surface:#121a1f;
   --pz-soft:#1c2830; --pz-brand:#14b8a6; --pz-good:#2dd4bf; --pz-bad:#f87171; --pz-amber:#fbbf24; --pz-indigo:#818cf8; }
+*, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; background: transparent; }
 body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--pz-ink); font-size: 14px;
   line-height: 1.45; -webkit-font-smoothing: antialiased; padding: 4px; box-sizing: border-box; }
@@ -115,7 +116,8 @@ export default function HtmlFlow({ code, name = 'fluxograma', toolbar = true, de
         sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer"
         srcDoc={srcDoc}
-        style={{ height }}
+        // color-scheme igual ao do documento interno: sem isso o navegador pinta um fundo opaco.
+        style={{ height, colorScheme: theme === 'dark' ? 'dark' : 'light' }}
         onLoad={() => frame.current?.contentWindow?.postMessage({ produziaTema: theme }, '*')}
       />
     </div>

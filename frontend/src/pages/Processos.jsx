@@ -230,7 +230,7 @@ function EmptyState({ onCreate }) {
       <h3>Nenhum processo mapeado ainda</h3>
       <p>
         Documente como o trabalho acontece em cada quadro: um texto em Markdown com etapas, responsáveis
-        e checklists, e um fluxograma em Mermaid que mostra o caminho de ponta a ponta.
+        e checklists, e um fluxograma (em Mermaid ou em HTML livre) que mostra o caminho de ponta a ponta.
       </p>
       <button className="btn btn-primary" type="button" onClick={onCreate}><Icon name="plus" />Criar o primeiro processo</button>
       <p className="pc-empty-mcp">

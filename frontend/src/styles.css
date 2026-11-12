@@ -856,7 +856,7 @@ input[type='date'] { color-scheme: inherit; }
 .hf-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 6px; }
 .hf-toolbar .btn-icon { width: 30px; height: 30px; }
 .hf-badge { margin-right: auto; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--muted-2); }
-.hf-frame { display: block; width: 100%; border: 0; background: transparent; color-scheme: normal; }
+.hf-frame { display: block; width: 100%; border: 0; background: transparent; }
 .hf:fullscreen .hf-frame { min-height: calc(100vh - 90px); }
 .pc-flow-type { padding: 2px; }
 .pc-flow-type button { padding: 3px 10px; font-size: 12px; }
