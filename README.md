@@ -15,6 +15,9 @@ React + Vite (frontend/) ──> API Flask (app/) ──┬──> API do Trello
   atividade por dia, horário da atividade, tabela por pessoa e situação de cada quadro.
 - **Resumo do dia**: escolha a data (setas ou ← → no teclado). Por pessoa: itens de checklist
   concluídos e pendentes, cards concluídos e pendentes, comentários, cards criados e movimentações.
+- **Calendário**: itens de checklist e cards com datas em vistas de mês, semana e dia, por prazo ou
+  pelo dia da conclusão (só itens: o Trello não informa quando um card foi concluído). Filtros por
+  pessoa, tipo e concluídas; ← → mudam o período.
 - **Quadros**: cadastre pelo link ou escolha entre os quadros da conta do Trello, e marque quais
   listas contam como "concluído".
 

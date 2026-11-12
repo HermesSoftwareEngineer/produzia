@@ -4,6 +4,7 @@ import { api } from './api.js'
 import { BoardsProvider, useBoards } from './boards.jsx'
 import BoardFilter from './components/BoardFilter.jsx'
 import { Icon } from './components/ui.jsx'
+import Calendario from './pages/Calendario.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Gantt from './pages/Gantt.jsx'
 import Login from './pages/Login.jsx'
@@ -11,7 +12,8 @@ import Quadros from './pages/Quadros.jsx'
 import Resumo from './pages/Resumo.jsx'
 import { ThemeSwitch } from './theme.jsx'
 
-const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/quadros': 'Quadros', '/gantt': 'Cronograma' }
+const TITLES = { '/': 'Dashboard', '/resumo': 'Resumo do dia', '/quadros': 'Quadros', '/gantt': 'Cronograma',
+  '/calendario': 'Calendário' }
 
 export default function App() {
   const [user, setUser] = useState(undefined)
@@ -71,6 +73,7 @@ function Shell({ onLogout }) {
         <nav>
           <NavLink to="/" end><Icon name="dashboard" /><span>Dashboard</span></NavLink>
           <NavLink to="/resumo"><Icon name="calendar" /><span>Resumo do dia</span></NavLink>
+          <NavLink to="/calendario"><Icon name="calgrid" /><span>Calendário</span></NavLink>
           <NavLink to="/gantt"><Icon name="gantt" /><span>Cronograma</span></NavLink>
           <NavLink to="/quadros"><Icon name="board" /><span>Quadros</span></NavLink>
         </nav>
@@ -96,6 +99,7 @@ function Shell({ onLogout }) {
             <Route path="/resumo" element={<Resumo />} />
             <Route path="/quadros" element={<Quadros />} />
             <Route path="/gantt" element={<Gantt />} />
+            <Route path="/calendario" element={<Calendario />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
