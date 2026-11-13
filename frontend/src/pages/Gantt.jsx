@@ -10,6 +10,10 @@ import { useFetch } from '../useFetch.js'
 
 const KEY_BOARD = 'produzia.gantt.quadro'
 const KEY_ZOOM = 'produzia.gantt.zoom'
+const KEY_LEFT = 'produzia.gantt.esquerda'
+const LEFT_DEFAULT = 340
+const LEFT_MIN = 160
+const LEFT_MAX_RATIO = 0.75 // a linha do tempo fica com pelo menos um quarto da largura
 
 function readStored(key, fallback) {
   try {
@@ -175,8 +179,89 @@ function Legend() {
   )
 }
 
+// Largura da coluna da lista, ajustada arrastando o divisor (lembrada no navegador).
+function useSplit(frameRef) {
+  const [stored, setStored] = useState(() => {
+    const n = Number(readStored(KEY_LEFT, ''))
+    return Number.isFinite(n) && n >= LEFT_MIN ? n : LEFT_DEFAULT
+  })
+  const [frameW, setFrameW] = useState(0)
+
+  useLayoutEffect(() => {
+    const el = frameRef.current
+    if (!el) return undefined
+    const update = () => setFrameW(el.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [frameRef])
+
+  const max = frameW ? Math.max(LEFT_MIN, Math.floor(frameW * LEFT_MAX_RATIO)) : 4000
+  const clamp = (n) => Math.round(Math.min(max, Math.max(LEFT_MIN, n)))
+  const width = clamp(stored)
+  const set = (n, save = true) => {
+    const v = clamp(n)
+    setStored(v)
+    if (save) store(KEY_LEFT, String(v))
+  }
+  return { width, min: LEFT_MIN, max, set }
+}
+
+function Splitter({ split }) {
+  const [dragging, setDragging] = useState(false)
+
+  function onPointerDown(e) {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = split.width
+    let last = startW
+    setDragging(true)
+    const move = (ev) => { last = startW + ev.clientX - startX; split.set(last, false) }
+    const up = () => {
+      split.set(last)
+      setDragging(false)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  function onKeyDown(e) {
+    const step = e.shiftKey ? 64 : 16
+    if (e.key === 'ArrowLeft') { e.preventDefault(); split.set(split.width - step) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); split.set(split.width + step) }
+    if (e.key === 'Home') { e.preventDefault(); split.set(split.min) }
+    if (e.key === 'End') { e.preventDefault(); split.set(split.max) }
+  }
+
+  return (
+    <div
+      className={`gt-resizer ${dragging ? 'dragging' : ''}`}
+      style={{ left: split.width }}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Largura da lista de tarefas"
+      aria-valuenow={split.width}
+      aria-valuemin={split.min}
+      aria-valuemax={split.max}
+      tabIndex={0}
+      title="Arraste para ajustar a largura da lista (duplo clique volta ao padrão)"
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => split.set(LEFT_DEFAULT)}
+      onKeyDown={onKeyDown}
+    >
+      <span className="gt-resizer-grip" />
+    </div>
+  )
+}
+
 function Timeline({ data, groups, zoom, people, open, onToggle }) {
   const scrollRef = useRef(null)
+  const frameRef = useRef(null)
+  const split = useSplit(frameRef)
   const [tip, setTip] = useState(null)
   const range = useMemo(() => timelineRange(data.intervalo, data.hoje, zoom), [data, zoom])
   const tiers = useMemo(() => scaleTiers(range, zoom), [range, zoom])
@@ -219,6 +304,7 @@ function Timeline({ data, groups, zoom, people, open, onToggle }) {
   const names = (ids) => ids.map((id) => people.get(id)?.nome).filter(Boolean).join(', ')
 
   return (
+    <div className="gt-frame" ref={frameRef} style={{ '--gt-left': `${split.width}px` }}>
     <div className="gt-scroll" ref={scrollRef} style={{ '--gt-w': `${width}px` }}>
       <div className="gt-inner">
         <div className="gt-header">
@@ -335,6 +421,8 @@ function Timeline({ data, groups, zoom, people, open, onToggle }) {
         </div>
       </div>
       {tip && <Tooltip tip={tip} hoje={data.hoje} />}
+    </div>
+    <Splitter split={split} />
     </div>
   )
 }

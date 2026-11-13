@@ -1005,3 +1005,22 @@ input[type='date'] { color-scheme: inherit; }
   .me { margin: 0; padding: 0; }
   .me-name { display: none; }
 }
+
+/* Divisor arrastavel entre a lista e a linha do tempo do Cronograma */
+.gt-frame { position: relative; }
+.gt-resizer {
+  position: absolute; top: 1px; bottom: 1px; width: 12px; margin-left: -6px; z-index: 9;
+  cursor: col-resize; touch-action: none; display: flex; justify-content: center;
+}
+.gt-resizer::before {
+  content: ''; width: 2px; height: 100%; background: transparent; transition: background .12s;
+}
+.gt-resizer:hover::before, .gt-resizer:focus-visible::before, .gt-resizer.dragging::before { background: var(--brand-2); }
+.gt-resizer:focus-visible { outline: none; }
+.gt-resizer-grip {
+  position: absolute; top: 18px; width: 6px; height: 28px; border-radius: 3px;
+  background: var(--line-strong); border: 1px solid var(--surface); opacity: 0; transition: opacity .12s;
+}
+.gt-frame:hover .gt-resizer-grip, .gt-resizer:focus-visible .gt-resizer-grip, .gt-resizer.dragging .gt-resizer-grip { opacity: 1; }
+.gt-resizer.dragging .gt-resizer-grip, .gt-resizer:hover .gt-resizer-grip { background: var(--brand-2); }
+body:has(.gt-resizer.dragging) { cursor: col-resize; user-select: none; }
