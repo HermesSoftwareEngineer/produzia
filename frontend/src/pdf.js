@@ -67,7 +67,7 @@ const statusLabel = (s) => STATUS_ONE[s] || 'Sem prazo'
 const iconCell = (e) => ({ content: '', icone: e.icone, tom: e.tom })
 
 export function exportResumoPdf({ data, people, day, boardsLabel, sections, filtered }) {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true })
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
   let y = M

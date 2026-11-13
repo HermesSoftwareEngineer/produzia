@@ -52,7 +52,7 @@ function axisTicks(start, end) {
 }
 
 export function exportGanttPdf({ data, groups, people, filtros }) {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' })
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape', compress: true })
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
   let y = M
@@ -130,6 +130,11 @@ export function exportGanttPdf({ data, groups, people, filtros }) {
     })
   }
 
+  // A linha e achada pelo proprio conteudo (row.raw), nunca pelo indice: quando o autoTable
+  // continua uma linha na pagina seguinte, o pedaco novo chega com indice -1.
+  const meta = new Map(body.map((r) => [r.cells, r]))
+  const rowOf = (c) => meta.get(c.row.raw)
+
   const chartX = (cell, n) => cell.x + 1 + ((n - start) / (end - start + 1)) * (cell.width - 2)
 
   autoTable(doc, {
@@ -138,6 +143,9 @@ export function exportGanttPdf({ data, groups, people, filtros }) {
     theme: 'plain',
     head: [['Lista', 'Card / item', 'Responsável', 'Início', 'Fim', 'Status', '']],
     body: body.map((r) => r.cells),
+    // Linha inteira na mesma pagina: a barra do cronograma nao fica cortada ao meio.
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
     styles: { font: 'helvetica', fontSize: 7.5, textColor: INK, cellPadding: { top: 1.6, bottom: 1.6, left: 1.5, right: 1.5 }, overflow: 'linebreak', valign: 'middle' },
     headStyles: { fontStyle: 'bold', textColor: MUTED, fontSize: 6.8, lineWidth: { bottom: 0.3 }, lineColor: LINE, minCellHeight: 8, valign: 'bottom' },
     bodyStyles: { lineWidth: { bottom: 0.1 }, lineColor: LINE, minCellHeight: 6 },
@@ -151,8 +159,8 @@ export function exportGanttPdf({ data, groups, people, filtros }) {
       [CHART]: { cellWidth: 'auto' },
     },
     didParseCell: (c) => {
-      if (c.section !== 'body') return
-      const row = body[c.row.index]
+      const row = c.section === 'body' && rowOf(c)
+      if (!row) return
       if (row.kind === 'card' && c.column.index === 1) c.cell.styles.fontStyle = 'bold'
       if (row.kind === 'item' && c.column.index <= 2) c.cell.styles.textColor = c.column.index === 1 ? [51, 65, 85] : MUTED
       if (c.column.index === 5) c.cell.styles.textColor = TONES[row.x.status]?.fg || MUTED
@@ -178,9 +186,9 @@ export function exportGanttPdf({ data, groups, people, filtros }) {
         doc.setDrawColor(...TODAY).setLineWidth(0.3)
         doc.line(x, cell.y, x, cell.y + cell.height)
       }
-      const row = body[c.row.index]
-      const x = row.x
-      if (!x.inicio) return
+      const row = rowOf(c)
+      const x = row && row.x
+      if (!x || !x.inicio) return
       const tone = TONES[x.status] || TONES.futuro
       const x1 = chartX(cell, dayNum(x.inicio))
       const x2 = chartX(cell, dayNum(x.fim) + 1)
