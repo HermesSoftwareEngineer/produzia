@@ -71,10 +71,32 @@ class ProduziaAPI:
             base_url=base_url.rstrip("/"), headers={"X-API-Key": api_key},
             timeout=httpx.Timeout(120, connect=10), transport=transport,
         )
+        # (access token) -> id do membro no Trello, para agir como quem autorizou o conector.
+        self.user_of = None
+
+    def _user_headers(self):
+        if not self.user_of:
+            return {}
+        try:
+            from mcp.server.auth.middleware.auth_context import get_access_token
+            token = get_access_token()
+        except Exception:  # fora de uma requisicao autenticada (ex.: testes)
+            token = None
+        user = self.user_of(token.token) if token else None
+        return {"X-Produzia-Usuario": user} if user else {}
+
+    async def resolve_trello(self, token):
+        """Valida um token do Trello no Produzia e devolve a conta (cria se for a primeira vez)."""
+        try:
+            resp = await self.client.post("/servico/usuarios", json={"token": token})
+        except httpx.HTTPError:
+            return None
+        return resp.json() if resp.status_code == 200 else None
 
     async def request(self, method, path, params=None, body=None):
         try:
-            resp = await self.client.request(method, path, params=params, json=body)
+            resp = await self.client.request(method, path, params=params, json=body,
+                                             headers=self._user_headers())
         except httpx.HTTPError as exc:
             raise ToolError(f"Não consegui falar com o Produzia ({type(exc).__name__}).") from exc
         if resp.status_code == 204:
@@ -241,7 +263,10 @@ def create_app(env: dict[str, Any] | None = None, transport=None):
         user=env.get("APP_USER", "admin"),
         password=env.get("APP_PASSWORD", ""),
         static_token=env.get("MCP_TOKEN", ""),
+        trello_key=env.get("TRELLO_KEY", ""),
+        resolve_trello=api.resolve_trello,
     )
+    api.user_of = provider.user_of
     # OAuth 2.0 (claude.ai, desktop, celular): descoberta RFC 9728/8414, registro dinamico
     # RFC 7591, PKCE. O token fixo MCP_TOKEN continua valendo para clientes com header.
     auth = AuthSettings(
@@ -271,6 +296,14 @@ def create_app(env: dict[str, Any] | None = None, transport=None):
     @mcp.custom_route("/oauth/login", methods=["POST"])
     async def login_submit(request):
         return await provider.login_submit(request)
+
+    @mcp.custom_route("/oauth/trello", methods=["GET"])
+    async def trello_return(request):
+        return await provider.trello_return_page(request)
+
+    @mcp.custom_route("/oauth/trello", methods=["POST"])
+    async def trello_submit(request):
+        return await provider.trello_submit(request)
 
     return mcp.streamable_http_app()
 

@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, request, send_from_directory, session
 
-from . import calendario, db, gantt, metrics, processos
+from . import accounts, calendario, db, gantt, metrics, processos
 from .trello import PowerUpClient, SourceError, TrelloClient
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -61,6 +61,7 @@ def create_app(overrides=None):
         APP_PASSWORD=env("APP_PASSWORD", ""),
         TIMEZONE=env("TIMEZONE", "America/Sao_Paulo"),
         PRODUZIA_API_KEY=env("PRODUZIA_API_KEY", ""),
+        TRELLO_KEY=env("TRELLO_KEY", ""),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=env("COOKIE_SECURE", "1") == "1",
@@ -69,7 +70,8 @@ def create_app(overrides=None):
     if overrides:
         app.config.update(overrides)
     app.json.ensure_ascii = False
-    app.config.setdefault("TRELLO", TrelloClient(env("TRELLO_KEY", ""), env("TRELLO_TOKEN", "")))
+    # Cliente do servidor: so o administrador usa. Cada pessoa usa o proprio token (accounts.py).
+    app.config.setdefault("TRELLO", TrelloClient(app.config["TRELLO_KEY"], env("TRELLO_TOKEN", "")))
     app.config.setdefault(
         "POWERUP", PowerUpClient(env("POWERUP_API_URL", ""), env("POWERUP_API_KEY", ""))
     )
@@ -80,7 +82,6 @@ def create_app(overrides=None):
     db.init_db(app.config["DATABASE_PATH"])
     app.teardown_appcontext(db.close_db)
 
-    trello = app.config["TRELLO"]
     powerup = app.config["POWERUP"]
 
     @app.errorhandler(ApiError)
@@ -91,25 +92,37 @@ def create_app(overrides=None):
     def source_error(error):
         return jsonify(erro=error.message), error.status
 
-    def logged_in():
-        return session.get("user") == app.config["APP_USER"]
+    def viewer():
+        return accounts.current_viewer()
 
     def api_login_required(view):
+        """Pessoa logada (Trello ou administrador) ou o MCP pela chave de servico."""
         @wraps(view)
         def wrapper(*args, **kwargs):
-            if not logged_in():
+            if not viewer():
                 return jsonify(erro="Faça login."), 401
             return view(*args, **kwargs)
         return wrapper
 
-    def api_or_key_required(view):
-        """Sessao do navegador ou chave de servico (X-API-Key), para leituras do MCP."""
+    def web_only(view):
+        """Alteracoes de quadros e cache: so pela tela (o MCP nao mexe nisso)."""
         @wraps(view)
         def wrapper(*args, **kwargs):
-            if not (logged_in() or processos.service_key_ok()):
+            v = viewer()
+            if not v:
                 return jsonify(erro="Faça login."), 401
+            if v.via != "web":
+                return jsonify(erro="Disponível só pela tela do Produzia."), 403
             return view(*args, **kwargs)
         return wrapper
+
+    api_or_key_required = api_login_required
+
+    def visible_board(board_id):
+        board = db.get_board(board_id or "")
+        if not board or not viewer().can_see(board["id"]):
+            raise ApiError(404, "Quadro não cadastrado ou sem acesso.")
+        return board
 
     app.register_blueprint(processos.bp)
 
@@ -141,7 +154,40 @@ def create_app(overrides=None):
         session.clear()
         session.permanent = True
         session["user"] = app.config["APP_USER"]
-        return jsonify(usuario=session["user"])
+        return jsonify(viewer().as_json())
+
+    @app.get("/api/auth/config")
+    def auth_config():
+        """O que a tela de login precisa: a chave publica do Trello e se ha login de administrador."""
+        return jsonify(trelloKey=app.config["TRELLO_KEY"], loginAdmin=bool(app.config["APP_PASSWORD"]))
+
+    def trello_account(token):
+        token = str(token or "").strip()
+        if not token or len(token) > 200:
+            raise ApiError(400, "Token do Trello ausente ou inválido.")
+        factory = app.config.get("TRELLO_FACTORY") or (lambda tok: TrelloClient(app.config["TRELLO_KEY"], tok))
+        try:
+            member = factory(token).me()
+        except SourceError as exc:
+            raise ApiError(401, "O Trello não aceitou a autorização. Tente entrar de novo.") from exc
+        return accounts.save_user(member, token)
+
+    @app.post("/api/auth/trello")
+    def login_trello():
+        """Recebe o token devolvido pelo Trello, cria ou atualiza a conta e abre a sessao."""
+        row = trello_account((request.get_json(silent=True) or {}).get("token"))
+        session.clear()
+        session.permanent = True
+        session["uid"] = row["id"]
+        return jsonify(viewer().as_json())
+
+    @app.post("/api/servico/usuarios")
+    def service_user():
+        """Para o servidor MCP: valida um token do Trello e devolve a conta (cria se preciso)."""
+        if not accounts._service_key_ok():
+            return jsonify(erro="Chave de serviço inválida."), 401
+        row = trello_account((request.get_json(silent=True) or {}).get("token"))
+        return jsonify(accounts.serialize_user(row))
 
     @app.post("/api/logout")
     def logout():
@@ -150,9 +196,12 @@ def create_app(overrides=None):
 
     @app.get("/api/me")
     def me():
-        if not logged_in():
+        v = viewer()
+        if not v:
             return jsonify(erro="Faça login."), 401
-        return jsonify(usuario=session["user"])
+        if not v.admin:
+            accounts.touch(v.id)
+        return jsonify(v.as_json())
 
     @app.get("/assets/<path:name>")
     def assets(name):
@@ -166,6 +215,7 @@ def create_app(overrides=None):
 
     @app.get("/")
     @app.get("/login")
+    @app.get("/auth/trello")
     @app.get("/resumo")
     @app.get("/quadros")
     @app.get("/gantt")
@@ -187,13 +237,14 @@ def create_app(overrides=None):
     # --- Quadros -------------------------------------------------------------
 
     @app.get("/api/boards")
-    @api_or_key_required
+    @api_login_required
     def boards_list():
-        return jsonify(quadros=db.list_boards())
+        return jsonify(quadros=viewer().visible_boards())
 
     @app.get("/api/trello/boards")
-    @api_login_required
+    @web_only
     def trello_boards():
+        trello = viewer().trello
         registered = {b["id"] for b in db.list_boards()}
         out = [
             {
@@ -209,6 +260,8 @@ def create_app(overrides=None):
     @app.get("/api/boards/<board_id>/lists")
     @api_login_required
     def board_lists(board_id):
+        visible_board(board_id)
+        trello = viewer().trello
         lists = [
             {"id": l["id"], "nome": l["name"], "arquivada": l.get("closed", False)}
             for l in sorted(trello.lists(board_id), key=lambda l: l.get("pos", 0))
@@ -216,14 +269,17 @@ def create_app(overrides=None):
         return jsonify(listas=lists)
 
     @app.post("/api/boards")
-    @api_login_required
+    @web_only
     def board_create():
+        trello = viewer().trello
         body = request.get_json(silent=True) or {}
         ref = str(body.get("ref", "")).strip()
         match = BOARD_REF.search(ref)
         if not match:
             raise ApiError(400, "Informe o link do quadro (trello.com/b/...) ou o ID.")
         info = trello.board(match.group(1) or match.group(2))
+        if not viewer().can_see(info["id"]):
+            raise ApiError(403, "Você só pode cadastrar quadros de que participa no Trello.")
         if db.get_board(info["id"]):
             raise ApiError(409, "Este quadro já está cadastrado.")
         lists = trello.lists(info["id"])
@@ -232,11 +288,10 @@ def create_app(overrides=None):
         return jsonify(db.get_board(info["id"])), 201
 
     @app.put("/api/boards/<board_id>")
-    @api_login_required
+    @web_only
     def board_update(board_id):
-        board = db.get_board(board_id)
-        if not board:
-            raise ApiError(404, "Quadro não cadastrado.")
+        board = visible_board(board_id)
+        trello = viewer().trello
         body = request.get_json(silent=True) or {}
         done = body.get("doneListIds")
         if not isinstance(done, list) or not all(isinstance(i, str) for i in done):
@@ -246,15 +301,16 @@ def create_app(overrides=None):
         return jsonify(db.get_board(board_id))
 
     @app.delete("/api/boards/<board_id>")
-    @api_login_required
+    @web_only
     def board_delete(board_id):
+        visible_board(board_id)
         db.delete_board(board_id)
         return "", 204
 
     # --- Relatorios ----------------------------------------------------------
 
     def selected_boards():
-        boards = db.list_boards()
+        boards = viewer().visible_boards()
         wanted = request.args.get("quadros")
         if wanted:
             ids = set(wanted.split(","))
@@ -265,9 +321,9 @@ def create_app(overrides=None):
         return [w for bd in boards_data for w in bd.warnings]
 
     @app.post("/api/cache/clear")
-    @api_login_required
+    @web_only
     def cache_clear():
-        trello.cache.clear()
+        viewer().trello.cache.clear()
         powerup.cache.clear()
         return jsonify(ok=True)
 
@@ -281,7 +337,7 @@ def create_app(overrides=None):
         start, end = metrics.day_bounds(day, tz)
         today = datetime.now(tz).date()
         ttl = 60 if day >= today else 600
-        data = metrics.collect(selected_boards(), trello, powerup, start, end, actions_ttl=ttl)
+        data = metrics.collect(selected_boards(), viewer().trello, powerup, start, end, actions_ttl=ttl)
         out = metrics.day_summary(data, day, tz)
         out["hoje"] = today.isoformat()
         out["avisos"] = warnings(data)
@@ -298,7 +354,7 @@ def create_app(overrides=None):
         start, _ = metrics.day_bounds(today - timedelta(days=2 * days - 1), tz)
         # Fim no inicio do dia seguinte: a mesma chave de cache serve o dia todo.
         _, end = metrics.day_bounds(today, tz)
-        data = metrics.collect(selected_boards(), trello, powerup, start, end, actions_ttl=180)
+        data = metrics.collect(selected_boards(), viewer().trello, powerup, start, end, actions_ttl=180)
         out = metrics.dashboard(data, today, days, tz)
         out["avisos"] = warnings(data)
         out["atualizadoEm"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -310,9 +366,10 @@ def create_app(overrides=None):
     @api_login_required
     def gantt_view():
         board = db.get_board(request.args.get("quadro", ""))
-        if not board:
+        if not board or not viewer().can_see(board["id"]):
             raise ApiError(404, "Escolha um quadro cadastrado.")
         bid = board["id"]
+        trello = viewer().trello
         lists = trello.lists(bid)
         members = trello.members(bid)
         cards = trello.open_cards(bid)
@@ -330,7 +387,7 @@ def create_app(overrides=None):
             inicio, fim = calendario.parse_range(request.args.get("inicio"), request.args.get("fim"))
         except ValueError as exc:
             raise ApiError(400, str(exc))
-        data = metrics.collect(selected_boards(), trello, powerup, with_actions=False)
+        data = metrics.collect(selected_boards(), viewer().trello, powerup, with_actions=False)
         out = calendario.build(data, inicio, fim, tz, gantt.today(tz))
         out["avisos"] = warnings(data)
         return jsonify(out)

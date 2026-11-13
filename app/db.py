@@ -46,6 +46,8 @@ def init_db(path):
 def _init_schema(conn):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    from .accounts import init_schema as init_accounts  # evita import circular
+    init_accounts(conn)
     # Fluxograma pode ser Mermaid ou HTML livre (coluna adicionada depois).
     cols = {r[1] for r in conn.execute("PRAGMA table_info(processos)")}
     if "fluxograma_tipo" not in cols:

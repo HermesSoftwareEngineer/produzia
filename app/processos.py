@@ -1,12 +1,11 @@
 """Mapeamento de processos: documento em Markdown e fluxograma (Mermaid ou HTML livre) por quadro."""
-import hmac
 import re
 import uuid
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, current_app, jsonify, make_response, request, session
+from flask import Blueprint, abort, jsonify, make_response, request
 
-from . import db
+from . import accounts, db
 
 bp = Blueprint("processos", __name__, url_prefix="/api/processos")
 
@@ -28,20 +27,9 @@ MERMAID_INICIO = re.compile(
 # --- Autenticacao ------------------------------------------------------------
 
 
-def service_key_ok():
-    """Chave de servico (usada pelo servidor MCP). Chave vazia nunca vale."""
-    expected = current_app.config.get("PRODUZIA_API_KEY") or ""
-    got = request.headers.get("X-API-Key", "")
-    return bool(expected) and bool(got) and hmac.compare_digest(got.encode(), expected.encode())
-
-
-def session_ok():
-    return session.get("user") == current_app.config["APP_USER"]
-
-
 @bp.before_request
 def _auth():
-    if not (session_ok() or service_key_ok()):
+    if not accounts.current_viewer():
         return jsonify(erro="Faça login."), 401
     if (request.content_length or 0) > MAX_BODY:
         return jsonify(erro="Conteúdo grande demais."), 413
@@ -95,8 +83,8 @@ def clean(body, current=None):
 
     if creating or "quadroId" in body:
         board_id = (_text(body, "quadroId", required=True) or "").strip()
-        if not db.get_board(board_id):
-            _fail(400, "Quadro não cadastrado no Produzia.")
+        if not db.get_board(board_id) or not accounts.current_viewer().can_see(board_id):
+            _fail(400, "Quadro não cadastrado no Produzia (ou você não participa dele).")
         out["board_id"] = board_id
 
     if creating or "nome" in body:
@@ -188,16 +176,21 @@ def _row(processo_id):
     return db.get_db().execute(f"{SELECT} WHERE p.id = ?", (processo_id,)).fetchone()
 
 
+def _visible(row):
+    """Cada pessoa ve os processos dos quadros de que participa; o administrador ve todos."""
+    viewer = accounts.current_viewer()
+    return viewer.admin or (row["quadro_nome"] is not None and viewer.can_see(row["board_id"]))
+
+
 def _get_or_404(processo_id):
     row = _row(processo_id)
-    if not row:
+    if not row or not _visible(row):
         _fail(404, "Processo não encontrado.")
     return row
 
 
 def _author():
-    # Sessao do navegador tem prioridade; a chave de servico so e usada pelo MCP.
-    return "web" if session_ok() else "mcp"
+    return accounts.current_viewer().via
 
 
 # --- Rotas -------------------------------------------------------------------
@@ -212,7 +205,7 @@ def listar():
         args.append(quadro)
     sql += " ORDER BY p.categoria IS NULL, p.categoria COLLATE NOCASE, p.nome COLLATE NOCASE"
     rows = db.get_db().execute(sql, args).fetchall()
-    return jsonify(processos=[serialize(r, full=False) for r in rows])
+    return jsonify(processos=[serialize(r, full=False) for r in rows if _visible(r)])
 
 
 @bp.get("/<processo_id>")

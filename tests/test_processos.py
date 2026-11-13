@@ -88,8 +88,8 @@ def test_service_key_reads_reports(service):
     assert service.get("/api/resumo?data=2026-11-11").status_code == 200
     assert service.get("/api/dashboard?dias=7").status_code == 200
     # A chave nao libera rotas de escrita dos quadros.
-    assert service.post("/api/boards", json={"ref": BOARD}).status_code == 401
-    assert service.post("/api/cache/clear").status_code == 401
+    assert service.post("/api/boards", json={"ref": BOARD}).status_code == 403
+    assert service.post("/api/cache/clear").status_code == 403
 
 
 def test_validation(client):

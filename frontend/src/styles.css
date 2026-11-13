@@ -982,3 +982,25 @@ input[type='date'] { color-scheme: inherit; }
   .cal-item { grid-template-columns: 28px minmax(0, 1fr); }
   .cal-side { grid-column: 2; padding-top: 0; }
 }
+
+/* --- Conta do Trello ----------------------------------------------------- */
+.btn-trello { background: #0c66e4; color: #fff; height: 42px; font-weight: 600; gap: 10px; }
+.btn-trello:hover:not(:disabled) { background: #0055cc; }
+.trello-mark { width: 20px; height: 20px; color: #fff; }
+.trello-mark rect:first-child { fill: rgb(255 255 255 / 0.22); }
+.login-hint { margin: -4px 0 0 !important; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.45; }
+.login-admin { border-top: 1px solid var(--line); padding-top: 12px; }
+.login-admin summary { cursor: pointer; color: var(--muted); font-size: 13px; text-align: center; list-style: none; }
+.login-admin summary::-webkit-details-marker { display: none; }
+.login-admin summary:hover { color: var(--ink); }
+.login-admin form { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.me { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-top: auto; margin-bottom: 8px;
+  border-radius: 8px; color: #fff; min-width: 0; }
+.me-name { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.me-name strong { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-name small { font-size: 11px; color: var(--side-ink); }
+.me + .theme-switch { margin-top: 0; }
+@media (max-width: 860px) {
+  .me { margin: 0; padding: 0; }
+  .me-name { display: none; }
+}

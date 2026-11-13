@@ -15,7 +15,7 @@ export async function api(path, { method = 'GET', body } = {}) {
   if (res.status === 204) return null
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    if (res.status === 401 && path !== '/login' && path !== '/me') {
+    if (res.status === 401 && !['/login', '/me', '/auth/trello', '/auth/config'].includes(path)) {
       window.location.href = '/login'
     }
     throw new ApiError(res.status, data.erro || `Erro ${res.status}`)

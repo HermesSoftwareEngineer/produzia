@@ -34,11 +34,17 @@ class TrelloClient:
         except requests.RequestException as exc:
             # Nunca repasse str(exc): a URL carrega a key e o token do Trello.
             raise SourceError(f"Falha ao falar com o Trello ({type(exc).__name__}).") from exc
+        if resp.status_code == 401:
+            raise SourceError("A autorização do Trello não vale mais. Entre de novo com sua conta.", 401)
         if resp.status_code == 404:
             raise SourceError("Quadro não encontrado no Trello (ou sem acesso).", 404)
         if resp.status_code >= 400:
             raise SourceError(f"Trello respondeu {resp.status_code}: {resp.text[:200]}", 502)
         return resp.json()
+
+    def me(self):
+        """Dados da conta dona do token (sem cache: usado no login)."""
+        return self._get("/members/me", fields="fullName,username,avatarUrl,initials")
 
     def my_boards(self):
         return self.cache.get_or_set(("my_boards",), 120, lambda: self._get(

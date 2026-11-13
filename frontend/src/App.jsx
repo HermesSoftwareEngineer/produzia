@@ -3,11 +3,11 @@ import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'reac
 import { api } from './api.js'
 import { BoardsProvider, useBoards } from './boards.jsx'
 import BoardFilter from './components/BoardFilter.jsx'
-import { Icon, Loading } from './components/ui.jsx'
+import { Avatar, Icon, Loading } from './components/ui.jsx'
 import Calendario from './pages/Calendario.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Gantt from './pages/Gantt.jsx'
-import Login from './pages/Login.jsx'
+import Login, { TrelloCallback } from './pages/Login.jsx'
 import Quadros from './pages/Quadros.jsx'
 import Resumo from './pages/Resumo.jsx'
 import { ThemeSwitch } from './theme.jsx'
@@ -25,9 +25,13 @@ export default function App() {
   const location = useLocation()
 
   useEffect(() => {
-    api('/me').then((d) => setUser(d.usuario)).catch(() => setUser(null))
+    // Na volta do Trello quem decide a sessao e a pagina de retorno.
+    if (location.pathname === '/auth/trello') { setUser(null); return }
+    api('/me').then(setUser).catch(() => setUser(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  if (location.pathname === '/auth/trello') return <TrelloCallback onLogin={setUser} />
   if (user === undefined) return <div className="loading full"><span className="spinner" /></div>
   if (!user) {
     return (
@@ -39,12 +43,12 @@ export default function App() {
   }
   return (
     <BoardsProvider>
-      <Shell onLogout={() => setUser(null)} />
+      <Shell user={user} onLogout={() => setUser(null)} />
     </BoardsProvider>
   )
 }
 
-function Shell({ onLogout }) {
+function Shell({ user, onLogout }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { refresh } = useBoards()
@@ -83,6 +87,13 @@ function Shell({ onLogout }) {
           <NavLink to="/processos"><Icon name="flow" /><span>Processos</span></NavLink>
           <NavLink to="/quadros"><Icon name="board" /><span>Quadros</span></NavLink>
         </nav>
+        <div className="me" title={user.admin ? 'Administrador: vê todos os quadros' : `@${user.username || ''}`}>
+          <Avatar pessoa={user} size={28} />
+          <span className="me-name">
+            <strong>{user.nome}</strong>
+            <small>{user.admin ? 'Administrador' : 'Conta do Trello'}</small>
+          </span>
+        </div>
         <ThemeSwitch />
         <button className="logout" type="button" onClick={logout}><Icon name="logout" /><span>Sair</span></button>
       </aside>

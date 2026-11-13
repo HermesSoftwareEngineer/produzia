@@ -9,6 +9,20 @@ React + Vite (frontend/) ──> API Flask (app/) ──┬──> API do Trello
                                                 └──> API do trello-power (X-API-Key)
 ```
 
+## Contas
+
+Cada pessoa entra com a **própria conta do Trello** (botão "Entrar com Trello"). O Produzia cria a conta
+dela na primeira vez e passa a ler o Trello com o token dela (guardado criptografado, só leitura): cada um
+vê e cadastra só os quadros de que participa, e os processos e relatórios seguem a mesma regra.
+
+- Na chave da API do Trello (`TRELLO_KEY`, em trello.com/power-ups/admin), `https://produzia.olimpo-services.com.br`
+  precisa estar em **Allowed origins** para o Trello aceitar a volta para `/auth/trello` e `/oauth/trello`.
+- O login de **administrador** (`APP_USER`/`APP_PASSWORD`) continua e usa o token do servidor (`TRELLO_TOKEN`),
+  vendo todos os quadros cadastrados.
+- No conector do Claude (OAuth do MCP), a autorização também é pelo Trello: as ferramentas agem como a
+  pessoa que autorizou. O token fixo `MCP_TOKEN` age como administrador.
+- Trocar o `SECRET_KEY` invalida os tokens guardados: todos precisam entrar de novo.
+
 ## Páginas
 
 - **Dashboard**: indicadores do período (7 a 90 dias) com comparação ao período anterior,

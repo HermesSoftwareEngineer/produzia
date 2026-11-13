@@ -1,6 +1,7 @@
 """Fluxo OAuth 2.0 do servidor MCP, do jeito que o claude.ai faz: descoberta, registro
 dinamico, autorizacao com PKCE no login do Produzia, troca de codigo, uso e refresh."""
 import base64
+import json
 import hashlib
 import secrets
 from urllib.parse import parse_qs, urlparse
@@ -152,3 +153,79 @@ def test_static_token_still_works(flask_app, tmp_path):
         r = tc.post("/mcp", json=INIT, headers={**ACCEPT, "Authorization": f"Bearer {TOKEN}"})
         assert r.status_code == 200
         assert tc.post("/mcp", json=INIT, headers={**ACCEPT, "Authorization": "Bearer errado"}).status_code == 401
+
+
+# --- Entrar com Trello no conector -------------------------------------------
+
+@pytest.fixture
+def flask_contas(tmp_path):
+    from app import create_app
+    from test_accounts import FactoryWithError
+    from test_app import BOARD, FakePowerUp, FakeTrello
+    app = create_app({
+        "TESTING": True, "DATABASE_PATH": str(tmp_path / "c.sqlite3"), "APP_USER": "admin",
+        "APP_PASSWORD": "senha", "SECRET_KEY": "x", "TRELLO": FakeTrello(), "POWERUP": FakePowerUp(),
+        "SESSION_COOKIE_SECURE": False, "PRODUZIA_API_KEY": KEY, "TRELLO_KEY": "chave-publica",
+        "TRELLO_FACTORY": FactoryWithError(),
+    })
+    c = app.test_client()
+    c.post("/api/login", json={"usuario": "admin", "senha": "senha"})
+    assert c.post("/api/boards", json={"ref": BOARD}).status_code == 201
+    return app
+
+
+def make_client_trello(flask_app, tmp_path):
+    env = {"PRODUZIA_API_URL": "http://produzia/api", "PRODUZIA_API_KEY": KEY, "MCP_TOKEN": TOKEN,
+           "PUBLIC_URL": BASE, "OAUTH_DB_PATH": str(tmp_path / "oauth.sqlite3"),
+           "APP_USER": "admin", "APP_PASSWORD": "senha", "TRELLO_KEY": "chave-publica"}
+    asgi = server.create_app(env, transport=FlaskTransport(flask_app.test_client()))
+    return TestClient(asgi, base_url=BASE, follow_redirects=False)
+
+
+def listar_quadros(tc, access_token):
+    r = tc.post("/mcp", json={"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                              "params": {"name": "listar_quadros", "arguments": {}}},
+                headers={**ACCEPT, "Authorization": f"Bearer {access_token}"})
+    assert r.status_code == 200
+    result = sse(r)["result"]
+    assert not result.get("isError"), result
+    data = result.get("structuredContent") or json.loads(result["content"][0]["text"])
+    return data["quadros"]
+
+
+def test_connector_login_with_trello_acts_as_that_person(flask_contas, tmp_path):
+    from test_app import BOARD
+    with make_client_trello(flask_contas, tmp_path) as tc:
+        client_id = register(tc)
+
+        def authorize_with_trello(token):
+            verifier, challenge = pkce()
+            r = tc.get("/authorize", params={
+                "response_type": "code", "client_id": client_id, "redirect_uri": REDIRECT, "state": "s",
+                "code_challenge": challenge, "code_challenge_method": "S256"})
+            pedido = parse_qs(urlparse(r.headers["location"]).query)["pedido"][0]
+            page = tc.get(f"/oauth/login?pedido={pedido}").text
+            assert "Entrar com Trello" in page and "trello.com/1/authorize" in page
+            assert "oauth%2Ftrello%3Fpedido%3D" + pedido in page.replace("&amp;", "&")
+            assert "location.hash" in tc.get(f"/oauth/trello?pedido={pedido}").text
+            r = tc.post("/oauth/trello", data={"pedido": pedido, "token": token})
+            if r.status_code != 302:
+                return r
+            code = parse_qs(urlparse(r.headers["location"]).query)["code"][0]
+            return tc.post("/token", data={"grant_type": "authorization_code", "code": code,
+                                           "redirect_uri": REDIRECT, "client_id": client_id,
+                                           "code_verifier": verifier}).json()
+
+        ana = authorize_with_trello("tok-ana")
+        beto = authorize_with_trello("tok-beto")
+        assert [q["id"] for q in listar_quadros(tc, ana["access_token"])] == [BOARD]
+        assert listar_quadros(tc, beto["access_token"]) == []
+        assert [q["id"] for q in listar_quadros(tc, TOKEN)] == [BOARD]  # token fixo = administrador
+
+        # Depois do refresh continua sendo a mesma pessoa
+        novo = tc.post("/token", data={"grant_type": "refresh_token", "refresh_token": beto["refresh_token"],
+                                       "client_id": client_id}).json()
+        assert listar_quadros(tc, novo["access_token"]) == []
+
+        r = authorize_with_trello("tok-invalido")
+        assert r.status_code == 401 and "não confirmou" in r.text
