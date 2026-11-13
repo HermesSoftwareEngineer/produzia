@@ -11,6 +11,8 @@ import { useFetch } from '../useFetch.js'
 const KEY_BOARD = 'produzia.gantt.quadro'
 const KEY_ZOOM = 'produzia.gantt.zoom'
 const KEY_LEFT = 'produzia.gantt.esquerda'
+const KEY_LINKS = 'produzia.gantt.predecessoras'
+const LINK_NAMES = { TI: 'término→início', II: 'início→início', TT: 'término→término', IT: 'início→término' }
 const LEFT_DEFAULT = 340
 const LEFT_MIN = 160
 const LEFT_MAX_RATIO = 0.75 // a linha do tempo fica com pelo menos um quarto da largura
@@ -37,10 +39,13 @@ export default function Gantt() {
   const [pessoa, setPessoa] = useState('')
   const [ocultarConcluidos, setOcultarConcluidos] = useState(false)
   const [soComDatas, setSoComDatas] = useState(false)
+  const [showLinks, setShowLinksState] = useState(() => readStored(KEY_LINKS, '1') !== '0')
+  const setShowLinks = (on) => { setShowLinksState(on); store(KEY_LINKS, on ? '1' : '0') }
   const [open, setOpen] = useState(() => new Set())
   const [busy, setBusy] = useState(false)
 
   const board = boards.find((b) => b.id === boardId) || boards[0]
+  const hasLinksFor = (d) => Boolean(d?.cards?.some((c) => c.itens.some((i) => i.predecessoras?.length)))
   const selectBoard = (id) => {
     setBoardId(id)
     setPessoa('')
@@ -62,6 +67,7 @@ export default function Gantt() {
     [current, pessoa, ocultarConcluidos, soComDatas],
   )
   const groups = useMemo(() => (current ? groupByList(current.listas, visible) : []), [current, visible])
+  const hasLinks = hasLinksFor(current)
 
   if (loaded && !boards.length) {
     return <Empty title="Nenhum quadro cadastrado">Cadastre um quadro em <Link to="/quadros">Quadros</Link> para ver o cronograma.</Empty>
@@ -132,6 +138,12 @@ export default function Gantt() {
             <input type="checkbox" checked={soComDatas} onChange={(e) => setSoComDatas(e.target.checked)} />
             <span>Só com datas</span>
           </label>
+          {hasLinks && (
+            <label className="toggle" title="Linhas ligando cada item às suas predecessoras">
+              <input type="checkbox" checked={showLinks} onChange={(e) => setShowLinks(e.target.checked)} />
+              <span>Mostrar predecessoras</span>
+            </label>
+          )}
           <span className="gt-count">
             {fmt(visible.length)} cards · {fmt(dated)} com datas{late > 0 && <b> · {fmt(late)} atrasados</b>}
           </span>
@@ -157,9 +169,10 @@ export default function Gantt() {
                 </p>
               )}
               {visible.length
-                ? <Timeline data={current} groups={groups} zoom={zoom} people={people} open={open} onToggle={toggle} />
+                ? <Timeline data={current} groups={groups} zoom={zoom} people={people} open={open} onToggle={toggle}
+                  showLinks={showLinks && hasLinks} />
                 : <Empty title="Nada para mostrar">Nenhum card com esses filtros.</Empty>}
-              <Legend />
+              <Legend links={showLinks && hasLinks} />
             </>
           )
       )}
@@ -167,7 +180,7 @@ export default function Gantt() {
   )
 }
 
-function Legend() {
+function Legend({ links }) {
   return (
     <div className="gt-legend" aria-label="Legenda">
       {['concluido', 'atrasado', 'andamento', 'futuro'].map((s) => (
@@ -175,6 +188,8 @@ function Legend() {
       ))}
       <span><i className="gt-swatch gt-swatch-today" />Hoje</span>
       <span><i className="gt-swatch gt-swatch-marco" />Marco (uma data só)</span>
+      {links && <span><i className="gt-swatch gt-swatch-link" />Predecessora</span>}
+      {links && <span><i className="gt-swatch gt-swatch-link late" />Datas em conflito</span>}
     </div>
   )
 }
@@ -258,7 +273,21 @@ function Splitter({ split }) {
   )
 }
 
-function Timeline({ data, groups, zoom, people, open, onToggle }) {
+// Datas em conflito com o vinculo (mesmas regras do Power-Up).
+function linkConflict(item, pred, tipo, lag) {
+  const plus = (iso, n) => {
+    const d = new Date(`${iso}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + n)
+    return d.toISOString().slice(0, 10)
+  }
+  const rules = { TI: [pred.fim, 1, item.inicio], II: [pred.inicio, 0, item.inicio],
+    TT: [pred.fim, 0, item.fim], IT: [pred.inicio, 0, item.fim] }
+  const [base, extra, field] = rules[tipo] || rules.TI
+  if (base && field && field < plus(base, extra + (lag || 0))) return true
+  return (tipo === 'TI' || tipo === 'TT') && item.feito && !pred.feito
+}
+
+function Timeline({ data, groups, zoom, people, open, onToggle, showLinks }) {
   const scrollRef = useRef(null)
   const frameRef = useRef(null)
   const split = useSplit(frameRef)
@@ -303,6 +332,73 @@ function Timeline({ data, groups, zoom, people, open, onToggle }) {
 
   const names = (ids) => ids.map((id) => people.get(id)?.nome).filter(Boolean).join(', ')
 
+  // --- Predecessoras: setas entre as barras ---
+  const bodyRef = useRef(null)
+  const [rows, setRows] = useState({})
+  const itemIndex = useMemo(() => {
+    const map = new Map()
+    groups.forEach(({ cards }) => cards.forEach((card) => card.visiveis.forEach((item) => map.set(item.id, { item, card }))))
+    return map
+  }, [groups])
+
+  // Posicao vertical de cada linha (card ou item), medida depois de desenhar.
+  useLayoutEffect(() => {
+    if (!showLinks || !bodyRef.current) return
+    const top = bodyRef.current.getBoundingClientRect().top
+    const next = {}
+    bodyRef.current.querySelectorAll('[data-row]').forEach((el) => {
+      const r = el.getBoundingClientRect()
+      next[el.dataset.row] = r.top - top + r.height / 2
+    })
+    setRows(next)
+  }, [showLinks, groups, open, zoom, split.width])
+
+  const links = useMemo(() => {
+    if (!showLinks) return []
+    const out = []
+    const anchor = ({ item, card }) => (open.has(card.id) ? `item:${item.id}` : `card:${card.id}`)
+    const edge = (x, side) => {
+      const b = bar(x)
+      if (x.marco) return b.left + px / 2
+      return side === 'fim' ? b.left + b.width : b.left
+    }
+    itemIndex.forEach((succ) => {
+      for (const p of succ.item.predecessoras || []) {
+        const pred = itemIndex.get(p.id)
+        if (!pred || !pred.item.inicio || !succ.item.inicio) continue
+        const a = anchor(pred)
+        const b = anchor(succ)
+        if (a === b || rows[a] === undefined || rows[b] === undefined) continue
+        const tipo = p.tipo || 'TI'
+        const fromEnd = tipo === 'TI' || tipo === 'TT'
+        const toStart = tipo === 'TI' || tipo === 'II'
+        out.push({
+          key: `${p.id}>${succ.item.id}`,
+          x1: edge(pred.item, fromEnd ? 'fim' : 'inicio'),
+          y1: rows[a],
+          x2: edge(succ.item, toStart ? 'inicio' : 'fim'),
+          y2: rows[b],
+          fromEnd,
+          toStart,
+          late: linkConflict(succ.item, pred.item, tipo, p.defasagem),
+        })
+      }
+    })
+    return out
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showLinks, itemIndex, rows, open, px, range.start])
+
+  const linkPath = (l) => {
+    // Cotovelos como no MS Project: sai para o lado, desce/sobe e entra na barra.
+    const out = l.fromEnd ? l.x1 + 8 : l.x1 - 8
+    const into = l.toStart ? l.x2 - 8 : l.x2 + 8
+    const midY = l.y1 + (l.y2 > l.y1 ? 1 : -1) * Math.min(Math.abs(l.y2 - l.y1) / 2, 14)
+    if ((l.toStart && out <= into) || (!l.toStart && out >= into)) {
+      return `M${l.x1},${l.y1} H${out} V${l.y2} H${l.x2}`
+    }
+    return `M${l.x1},${l.y1} H${out} V${midY} H${into} V${l.y2} H${l.x2}`
+  }
+
   return (
     <div className="gt-frame" ref={frameRef} style={{ '--gt-left': `${split.width}px` }}>
     <div className="gt-scroll" ref={scrollRef} style={{ '--gt-w': `${width}px` }}>
@@ -325,7 +421,23 @@ function Timeline({ data, groups, zoom, people, open, onToggle }) {
           </div>
         </div>
 
-        <div className="gt-body">
+        <div className="gt-body" ref={bodyRef}>
+          {links.length > 0 && (
+            <svg className="gt-links" aria-hidden="true" width={width} height="100%">
+              <defs>
+                <marker id="gt-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L8,4 L0,8 z" className="gt-arrow-head" />
+                </marker>
+                <marker id="gt-arrow-late" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L8,4 L0,8 z" className="gt-arrow-head late" />
+                </marker>
+              </defs>
+              {links.map((l) => (
+                <path key={l.key} d={linkPath(l)} className={`gt-link ${l.late ? 'late' : ''}`}
+                  markerEnd={`url(#${l.late ? 'gt-arrow-late' : 'gt-arrow'})`} />
+              ))}
+            </svg>
+          )}
           <div className="gt-bg" aria-hidden="true">
             {weekends.map((i) => <span key={i} className="gt-weekend" style={{ left: i * px, width: px }} />)}
             {tiers.bottom.map((s) => <span key={s.key} className="gt-grid" style={{ left: s.from * px }} />)}
@@ -354,7 +466,7 @@ function Timeline({ data, groups, zoom, people, open, onToggle }) {
                 ]
                 return (
                   <div key={card.id} className="gt-card-group">
-                    <div className="gt-row gt-row-card">
+                    <div className="gt-row gt-row-card" data-row={`card:${card.id}`}>
                       <div className="gt-label">
                         {card.visiveis.length ? (
                           <button className={`gt-caret ${isOpen ? 'open' : ''}`} type="button" onClick={() => onToggle(card.id)}
@@ -392,9 +504,13 @@ function Timeline({ data, groups, zoom, people, open, onToggle }) {
                         item.checklist ? `Checklist: ${item.checklist}` : null,
                         `Responsável: ${dono?.nome || 'sem responsável'}`,
                         item.marco ? 'Marco: só uma das datas definida' : null,
+                        ...(item.predecessoras || []).map((p) => {
+                          const lag = p.defasagem ? ` ${p.defasagem > 0 ? '+' : ''}${p.defasagem}d` : ''
+                          return `Depois de: ${p.texto || 'item'} (${LINK_NAMES[p.tipo] || p.tipo}${lag})${p.externa ? ' · outro quadro' : ''}`
+                        }),
                       ]
                       return (
-                        <div key={item.id} className="gt-row gt-row-item">
+                        <div key={item.id} className="gt-row gt-row-item" data-row={`item:${item.id}`}>
                           <div className="gt-label">
                             <Icon name={item.feito ? 'item' : 'circle'} className={item.feito ? 'gt-item-done' : 'gt-item-open'} />
                             <span className={`truncate ${item.feito ? 'gt-feito' : ''}`} title={item.texto}>{item.texto}</span>

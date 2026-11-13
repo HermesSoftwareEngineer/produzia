@@ -27,7 +27,9 @@ def gclient(app, client, monkeypatch):  # noqa: F811
         {**base, "id": "i5", "texto": "Desenho", "responsavelId": BETO,
          "dataInicio": "2026-11-20", "dataFim": "2026-11-30"},
         {**base, "id": "i6", "texto": "Aprovação", "responsavelId": None,
-         "dataInicio": "2026-11-15", "dataFim": None},
+         "dataInicio": "2026-11-15", "dataFim": None,
+         "predecessoras": [{"id": "i5", "tipo": "TI", "defasagem": 1, "boardId": BOARD, "texto": "Desenho"},
+                           {"id": "x9", "tipo": "II", "defasagem": 0, "boardId": "f" * 24, "texto": "Fora"}]},
     ]
     return client
 
@@ -109,3 +111,13 @@ def test_gantt_powerup_warning(app, gclient):  # noqa: F811
 
 def test_gantt_spa_route(gclient):
     assert gclient.get("/gantt").status_code in (200, 404)
+
+
+def test_gantt_items_carry_predecessors(gclient):
+    data = gclient.get(f"/api/gantt?quadro={BOARD}").get_json()
+    items = {i["id"]: i for c in data["cards"] for i in c["itens"]}
+    assert items["i6"]["predecessoras"] == [
+        {"id": "i5", "tipo": "TI", "defasagem": 1, "externa": False, "texto": "Desenho"},
+        {"id": "x9", "tipo": "II", "defasagem": 0, "externa": True, "texto": "Fora"},
+    ]
+    assert items["i5"]["predecessoras"] == []

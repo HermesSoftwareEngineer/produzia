@@ -84,6 +84,13 @@ def build(board, lists, members, cards, items, tz, day):
                 "responsavel": owner,
                 "feito": feito,
                 "status": _status(feito or card_done, ini, fim, hoje),
+                # Predecessoras do Power-Up (como no MS Project); as de outros quadros vem marcadas.
+                "predecessoras": [
+                    {"id": p.get("id"), "tipo": p.get("tipo") or "TI", "defasagem": p.get("defasagem") or 0,
+                     "externa": bool(p.get("boardId")) and p.get("boardId") != board["id"],
+                     "texto": p.get("texto")}
+                    for p in item.get("predecessoras") or [] if p.get("id")
+                ],
             })
         out_items.sort(key=lambda i: (i["checklist"] or "", i["inicio"] or "9999", i["texto"].lower()))
 
