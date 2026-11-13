@@ -301,6 +301,7 @@ input[type='checkbox'] { accent-color: var(--brand); width: 16px; height: 16px; 
 .mini-stats strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 .mini-stats span { font-size: 11.5px; color: var(--muted); }
 .mini-stats .bad strong { color: var(--bad); }
+.mini-stats strong.good { color: var(--good); }
 .progress-row { display: grid; grid-template-columns: 76px 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; color: var(--ink-2); }
 .progress { height: 8px; background: var(--soft); border-radius: 4px; overflow: hidden; }
 .progress span { display: block; height: 100%; background: var(--good); border-radius: 4px; }

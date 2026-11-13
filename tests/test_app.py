@@ -189,6 +189,7 @@ def test_dashboard_metrics(app, client):
     assert len(out["serie"]) == 7
     assert next(r for r in out["ranking"] if r["pessoa"]["id"] == ANA)["itensConcluidos"] == 1
     (board,) = out["quadros"]
+    assert board["itensConcluidos"] == 1 and board["cardsConcluidos"] == 1
     assert [l["cards"] for l in board["listas"]] == [1, 1]
 
     assert client.get("/api/dashboard?dias=7").status_code == 200

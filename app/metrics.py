@@ -403,7 +403,7 @@ def dashboard(boards_data, today, days, tz, now=None):
     for bd in boards_data:
         b = {"id": bd.board["id"], "nome": bd.board["nome"], "url": bd.board["url"],
              "cardsAbertos": 0, "cardsAtrasados": 0, "cardsConcluidos": 0, "comentarios": 0,
-             "itensFeitos": 0, "itensTotal": 0, "itensAtrasados": 0, "listas": []}
+             "itensConcluidos": 0, "itensFeitos": 0, "itensTotal": 0, "itensAtrasados": 0, "listas": []}
         seen_done = set()
         for ev in extract_events(bd):
             key = field.get(ev["tipo"])
@@ -434,6 +434,7 @@ def dashboard(boards_data, today, days, tz, now=None):
                 previous["itensConcluidos"] += 1
             elif first_day <= item_dia <= today:
                 current["itensConcluidos"] += 1
+                b["itensConcluidos"] += 1
                 series[item_dia.isoformat()]["itensConcluidos"] += 1
                 rank(item_owner(item))["itensConcluidos"] += 1
 

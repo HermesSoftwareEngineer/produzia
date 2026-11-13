@@ -216,10 +216,17 @@ function BoardPanel({ b }) {
         <a href={b.url} target="_blank" rel="noreferrer" className="btn btn-ghost btn-icon" title="Abrir no Trello"><Icon name="external" /></a>
       </div>
       <div className="mini-stats">
-        <div><strong>{fmt(b.cardsAbertos)}</strong><span>em aberto</span></div>
-        <div><strong>{fmt(b.cardsConcluidos)}</strong><span>concluídos</span></div>
-        <div className={b.cardsAtrasados ? 'bad' : ''}><strong>{fmt(b.cardsAtrasados)}</strong><span>atrasados</span></div>
-        <div><strong>{fmt(b.comentarios)}</strong><span>comentários</span></div>
+        <div title="Itens de checklist com prazo no período e marcados como feitos">
+          <strong className={b.itensConcluidos ? 'good' : ''}>{fmt(b.itensConcluidos)}</strong><span>itens feitos</span>
+        </div>
+        <div title="Cards movidos para uma lista de concluído ou com a entrega marcada, no período">
+          <strong>{fmt(b.cardsConcluidos)}</strong><span>cards concluídos</span>
+        </div>
+        <div className={b.cardsAtrasados + b.itensAtrasados ? 'bad' : ''}
+          title={`${b.cardsAtrasados} cards e ${b.itensAtrasados} itens com prazo vencido`}>
+          <strong>{fmt(b.cardsAtrasados + b.itensAtrasados)}</strong><span>atrasados</span>
+        </div>
+        <div><strong>{fmt(b.cardsAbertos)}</strong><span>cards em aberto</span></div>
       </div>
       {pct !== null && (
         <div className="progress-row">
