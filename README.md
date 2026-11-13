@@ -20,8 +20,8 @@ React + Vite (frontend/) ──> API Flask (app/) ──┬──> API do Trello
 - **Processos**: mapeamento de processos por quadro, com documento em Markdown (tabelas, listas de
   tarefas) e fluxograma em Mermaid (zoom, tela cheia, exportar SVG/PNG) ou em HTML/CSS livre,
   desenhado num iframe isolado que acompanha o tema. Crie e edite pela página ou por um agente de IA via MCP.
-- **Calendário**: itens de checklist e cards com datas em vistas de mês, semana e dia, por prazo ou
-  pelo dia da conclusão (só itens: o Trello não informa quando um card foi concluído). Filtros por
+- **Calendário**: itens de checklist e cards com datas em vistas de mês, semana e dia, cada tarefa no
+  dia do seu prazo (concluída ou pendente, como uma checklist do dia). Filtros por
   pessoa, tipo e concluídas; ← → mudam o período.
 - **Quadros**: cadastre pelo link ou escolha entre os quadros da conta do Trello, e marque quais
   listas contam como "concluído".

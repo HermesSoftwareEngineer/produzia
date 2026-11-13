@@ -3,8 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { boardsQuery } from '../api.js'
 import { useBoards } from '../boards.jsx'
 import { Avatar, CardLink, Empty, ErrorBox, Icon, Loading, Status, Warnings } from '../components/ui.jsx'
-import {
-  MODES, TYPES, VIEWS, WEEKDAYS, dayCounts, filterTasks, groupByDay, periodTitle, shiftDate, sortTasks, viewDays,
+import { TYPES, VIEWS, WEEKDAYS, dayCounts, filterTasks, groupByDay, periodTitle, shiftDate, sortTasks, viewDays,
 } from '../calendario.js'
 import { addDays, fmt, parseDay, shortDate, toIso } from '../format.js'
 import { useFetch } from '../useFetch.js'
@@ -39,7 +38,6 @@ export default function Calendario() {
   const vista = VIEWS.some((v) => v.key === params.get('vista')) ? params.get('vista') : 'mes'
   const rawDate = params.get('data')
   const data = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && !Number.isNaN(parseDay(rawDate).getTime()) ? rawDate : today
-  const modo = params.get('modo') === 'conclusao' ? 'conclusao' : 'prazo'
 
   const [pessoa, setPessoa] = useState('')
   const [tipo, setTipo] = useState('ambos')
@@ -49,8 +47,7 @@ export default function Calendario() {
   const go = (next, { push = false } = {}) => {
     const v = next.vista ?? vista
     const d = next.data ?? data
-    const m = next.modo ?? modo
-    setParams({ vista: v, data: d, ...(m === 'conclusao' ? { modo: m } : {}) }, { replace: !push })
+    setParams({ vista: v, data: d }, { replace: !push })
   }
   const move = (dir) => go({ data: shiftDate(vista, data, dir) })
   const openDay = (iso) => go({ vista: 'dia', data: iso }, { push: true })
@@ -73,11 +70,11 @@ export default function Calendario() {
   const stale = res && (res.inicio !== inicio || res.fim !== fim)
   const hoje = res?.hoje || today
 
-  const filtros = { pessoa, tipo, mostrarConcluidas, modo }
+  const filtros = { pessoa, tipo, mostrarConcluidas }
   const visible = useMemo(() => (res ? filterTasks(res.tarefas, filtros) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [res, pessoa, tipo, mostrarConcluidas, modo])
-  const byDay = useMemo(() => groupByDay(visible, modo), [visible, modo])
+    [res, pessoa, tipo, mostrarConcluidas])
+  const byDay = useMemo(() => groupByDay(visible), [visible])
 
   if (loaded && !boards.length) {
     return <Empty title="Nenhum quadro cadastrado">Cadastre um quadro em <Link to="/quadros">Quadros</Link> para ver o calendário.</Empty>
@@ -85,13 +82,9 @@ export default function Calendario() {
 
   const inView = days.flatMap((d) => byDay.get(d) || [])
   const counts = dayCounts(inView)
-  const semConclusao = modo === 'conclusao' && res
-    ? filterTasks(res.tarefas, { ...filtros, modo: 'prazo', mostrarConcluidas: true })
-      .filter((t) => t.concluido && !t.concluidoEm && t.prazo >= inicio && t.prazo <= fim).length
-    : 0
   // O mês conta como atual pelo mês, não pelos dias vizinhos que completam a grade.
   const current = vista === 'mes' ? today.slice(0, 7) === data.slice(0, 7) : days.includes(today)
-  const atrasadas = vista === 'dia' && data === hoje && modo === 'prazo' && res
+  const atrasadas = vista === 'dia' && data === hoje && res
     ? sortTasks(filterTasks(res.atrasadas, { ...filtros, mostrarConcluidas: true }).filter((t) => t.prazo < data))
     : []
 
@@ -125,11 +118,6 @@ export default function Calendario() {
       </div>
 
       <div className="cal-toolbar">
-        <div className="segmented" role="group" aria-label="Posicionar tarefas">
-          {MODES.map((m) => (
-            <button key={m.key} type="button" className={modo === m.key ? 'active' : ''} onClick={() => go({ modo: m.key })}>{m.label}</button>
-          ))}
-        </div>
         <label className="gt-person">
           <span>Pessoa</span>
           <select value={pessoa} onChange={(e) => setPessoa(e.target.value)}>
@@ -142,9 +130,8 @@ export default function Calendario() {
             <button key={t.key} type="button" className={tipo === t.key ? 'active' : ''} onClick={() => setTipo(t.key)}>{t.label}</button>
           ))}
         </div>
-        <label className="toggle" title={modo === 'conclusao' ? 'Por conclusão mostra só as concluídas' : undefined}>
-          <input type="checkbox" checked={modo === 'conclusao' || mostrarConcluidas} disabled={modo === 'conclusao'}
-            onChange={(e) => setMostrarConcluidas(e.target.checked)} />
+        <label className="toggle">
+          <input type="checkbox" checked={mostrarConcluidas} onChange={(e) => setMostrarConcluidas(e.target.checked)} />
           <span>Mostrar concluídas</span>
         </label>
         {res && (
@@ -157,13 +144,6 @@ export default function Calendario() {
 
       <ErrorBox error={error} />
       {res && <Warnings items={res.avisos} />}
-      {semConclusao > 0 && (
-        <p className="gt-note">
-          <Icon name="card" />
-          {semConclusao === 1 ? '1 card concluído fica' : `${fmt(semConclusao)} cards concluídos ficam`} de fora:
-          o Trello não informa quando cards são concluídos, só itens de checklist.
-        </p>
-      )}
 
       {loading && !res ? <Loading /> : res && (
         <div className={`cal-body ${stale ? 'cal-stale' : ''}`}>
@@ -172,11 +152,11 @@ export default function Calendario() {
             : <MonthGrid days={days} month={data.slice(0, 7)} byDay={byDay} hoje={hoje} onPick={openDay} />)}
           {vista === 'semana' && <WeekView days={days} byDay={byDay} hoje={hoje} onPick={openDay} />}
           {vista === 'dia' && (
-            <DayView day={data} list={byDay.get(data) || []} hoje={hoje} modo={modo} atrasadas={atrasadas} />
+            <DayView day={data} list={byDay.get(data) || []} hoje={hoje} atrasadas={atrasadas} />
           )}
           {vista !== 'dia' && !inView.length && !stale && (
             <p className="feed-empty cal-empty">
-              {modo === 'prazo' ? 'Nenhuma tarefa com prazo neste período.' : 'Nada concluído neste período.'}
+              Nenhuma tarefa com prazo neste período.
             </p>
           )}
           {vista !== 'dia' && <Legend />}
@@ -283,7 +263,7 @@ function DayColumn({ day, list, hoje, onPick, listMode }) {
   )
 }
 
-function DayView({ day, list, hoje, modo, atrasadas }) {
+function DayView({ day, list, hoje, atrasadas }) {
   const pendentes = list.filter((t) => !t.concluido)
   const concluidas = list.filter((t) => t.concluido)
   const late = pendentes.filter((t) => t.status === 'atrasado').length
@@ -311,33 +291,28 @@ function DayView({ day, list, hoje, modo, atrasadas }) {
             <Icon name="chevron" className="caret" />
             Atrasadas de dias anteriores<span className="n">{atrasadas.length}</span>
           </summary>
-          <ul className="feed">{atrasadas.map((t) => <DayItem key={t.id} t={t} modo={modo} showDate />)}</ul>
+          <ul className="feed">{atrasadas.map((t) => <DayItem key={t.id} t={t} showDate />)}</ul>
         </details>
       )}
 
-      {modo === 'prazo' && (
-        <>
-          <div className={`feed-group ${late ? 'late' : ''}`}>Pendentes · {pendentes.length}</div>
-          {pendentes.length
-            ? <ul className="feed">{pendentes.map((t) => <DayItem key={t.id} t={t} modo={modo} />)}</ul>
-            : <p className="feed-empty">{day === hoje ? 'Nada pendente para hoje.' : 'Nenhuma pendência com prazo neste dia.'}</p>}
-        </>
-      )}
+      <div className={`feed-group ${late ? 'late' : ''}`}>Pendentes · {pendentes.length}</div>
+      {pendentes.length
+        ? <ul className="feed">{pendentes.map((t) => <DayItem key={t.id} t={t} />)}</ul>
+        : <p className="feed-empty">{day === hoje ? 'Nada pendente para hoje.' : 'Nenhuma pendência com prazo neste dia.'}</p>}
       <div className="feed-group">Concluídas · {concluidas.length}</div>
       {concluidas.length
-        ? <ul className="feed">{concluidas.map((t) => <DayItem key={t.id} t={t} modo={modo} />)}</ul>
-        : <p className="feed-empty">{modo === 'prazo' ? 'Nada concluído entre as tarefas deste dia.' : 'Nada concluído neste dia.'}</p>}
+        ? <ul className="feed">{concluidas.map((t) => <DayItem key={t.id} t={t} />)}</ul>
+        : <p className="feed-empty">Nada concluído entre as tarefas deste dia.</p>}
     </div>
   )
 }
 
 const TONE = { concluido: 'good', atrasado: 'bad', hoje: 'amber', pendente: 'muted' }
 
-function DayItem({ t, modo, showDate }) {
+function DayItem({ t, showDate }) {
   const icon = t.tipo === 'card' ? 'card' : t.concluido ? 'check' : 'circle'
   const notes = [t.checklist]
-  if (modo === 'prazo' && t.concluidoEm && t.concluidoEm !== t.prazo) notes.push(`concluída em ${shortDate(t.concluidoEm)}`)
-  if (modo === 'conclusao' && t.prazo) notes.push(`prazo ${shortDate(t.prazo)}`)
+  if (!t.prazo) notes.push('sem prazo')
   const card = t.tipo === 'card' ? { ...t.card, nome: '' } : t.card
   return (
     <li className="feed-item no-time cal-item">

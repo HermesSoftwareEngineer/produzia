@@ -7,11 +7,6 @@ export const VIEWS = [
   { key: 'dia', label: 'Dia' },
 ]
 
-export const MODES = [
-  { key: 'prazo', label: 'Por prazo' },
-  { key: 'conclusao', label: 'Por conclusão' },
-]
-
 export const TYPES = [
   { key: 'ambos', label: 'Ambos' },
   { key: 'item', label: 'Itens' },
@@ -76,10 +71,10 @@ export function periodTitle(view, iso, todayIso) {
   return `${da.getDate()} de ${MONTH.format(da)}${yearA} – ${db.getDate()} de ${MONTH.format(db)}${year}`
 }
 
-export function filterTasks(tasks, { pessoa, tipo, mostrarConcluidas, modo }) {
+export function filterTasks(tasks, { pessoa, tipo, mostrarConcluidas }) {
   return tasks.filter((t) => {
     if (tipo !== 'ambos' && t.tipo !== tipo) return false
-    if (modo === 'prazo' && !mostrarConcluidas && t.concluido) return false
+    if (!mostrarConcluidas && t.concluido) return false
     if (pessoa === '_sem') return t.responsaveis.length === 0
     if (pessoa && !t.responsaveis.some((p) => p.id === pessoa)) return false
     return true
@@ -90,11 +85,11 @@ export const sortTasks = (list) => [...list].sort((a, b) => (
   STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.titulo.localeCompare(b.titulo, 'pt-BR')
 ))
 
-/** Agrupa as tarefas por dia: pelo prazo ou pelo dia da conclusão. */
-export function groupByDay(tasks, modo) {
+/** Agrupa as tarefas pelo dia do prazo (item feito sem nenhuma data: dia em que foi marcado). */
+export function groupByDay(tasks) {
   const map = new Map()
   for (const t of tasks) {
-    const day = modo === 'conclusao' ? (t.concluido ? t.concluidoEm : null) : t.prazo
+    const day = t.prazo || (t.concluido ? t.concluidoEm : null)
     if (!day) continue
     if (!map.has(day)) map.set(day, [])
     map.get(day).push(t)
