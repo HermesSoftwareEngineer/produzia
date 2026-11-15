@@ -21,7 +21,7 @@ export function trelloAuthorizeUrl(key) {
   const params = new URLSearchParams({
     expiration: 'never',
     name: 'Produzia',
-    scope: 'read',
+    scope: 'read,write',
     response_type: 'token',
     callback_method: 'fragment',
     return_url: `${window.location.origin}/auth/trello`,

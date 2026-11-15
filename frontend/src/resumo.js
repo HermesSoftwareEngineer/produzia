@@ -29,9 +29,12 @@ export function buildFeeds(row) {
   const pendentes = [
     ...row.itensPendentes.map((i) => ({
       tipo: 'Item', icone: 'circle', tom: i.status === 'atrasado' ? 'bad' : 'muted', titulo: i.texto, card: i.card, status: i.status, prazo: i.dataFim, nota: i.checklist || null,
+      // Para reagendar/concluir pelo Produzia.
+      key: `item:${i.id}`, kind: 'item', cardId: i.card.id, itemId: i.id, inicio: i.dataInicio || null,
     })),
     ...row.cardsPendentes.map((c) => ({
       tipo: 'Card', icone: 'card', tom: c.status === 'atrasado' ? 'bad' : 'muted', titulo: c.card.nome, card: { ...c.card, nome: '' }, status: c.status, prazo: c.due,
+      key: `card:${c.card.id}`, kind: 'card', cardId: c.card.id,
     })),
   ]
 
@@ -50,4 +53,14 @@ export function pendingGroups(items) {
     .map((g) => ({ ...g, key: g.key ?? 'sem', items: items.filter((i) => (i.status ?? null) === g.key) }))
     .filter((g) => g.items.length)
     .map((g) => ({ ...g, items: [...g.items].sort((a, b) => (a.prazo || '9').localeCompare(b.prazo || '9')) }))
+}
+
+// --- Reagendar / concluir pendências (uma ou várias) ---------------------------
+
+// Prazo como data local AAAA-MM-DD (o dos cards vem com hora, em UTC).
+export function dueDay(e) {
+  if (!e.prazo) return null
+  if (e.prazo.length === 10) return e.prazo
+  const d = new Date(e.prazo)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }

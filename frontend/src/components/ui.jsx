@@ -1,5 +1,6 @@
 import { delta, fmt, shortDate } from '../format.js'
 import { PATHS } from '../icons.js'
+import { useCardEditor } from './editorContext.js'
 
 
 export function Icon({ name, className = '' }) {
@@ -79,12 +80,22 @@ export function Status({ status, date }) {
   )
 }
 
-export function CardLink({ card, showBoard = true }) {
+// Link do card: abre o editor do Produzia (o Trello fica a um clique, dentro do editor).
+// Card arquivado ou sem editor disponível continua indo direto para o Trello.
+export function CardLink({ card, showBoard = true, itemId }) {
+  const { openCard } = useCardEditor()
   const meta = [showBoard ? card.quadro : null, card.lista].filter(Boolean).join(' › ')
+  const inner = <>
+    {card.nome && <span className="card-link-name">{card.nome}</span>}
+    {meta && <span className="card-link-meta">{meta}</span>}
+  </>
+  if (!openCard || card.arquivado) {
+    return <a className="card-link" href={card.url} target="_blank" rel="noreferrer" title="Abrir no Trello">{inner}</a>
+  }
   return (
-    <a className="card-link" href={card.url} target="_blank" rel="noreferrer" title="Abrir no Trello">
-      {card.nome && <span className="card-link-name">{card.nome}</span>}
-      {meta && <span className="card-link-meta">{meta}</span>}
-    </a>
+    <button type="button" className="card-link card-link-btn" title="Abrir o card no Produzia"
+      onClick={() => openCard(card.id, { itemId })}>
+      {inner}
+    </button>
   )
 }

@@ -12,8 +12,14 @@ React + Vite (frontend/) ──> API Flask (app/) ──┬──> API do Trello
 ## Contas
 
 Cada pessoa entra com a **própria conta do Trello** (botão "Entrar com Trello"). O Produzia cria a conta
-dela na primeira vez e passa a ler o Trello com o token dela (guardado criptografado, só leitura): cada um
+dela na primeira vez e passa a ler o Trello com o token dela (guardado criptografado): cada um
 vê e cadastra só os quadros de que participa, e os processos e relatórios seguem a mesma regra.
+
+O token pedido no login é de **leitura e escrita**: cronograma, resumo do dia e calendário editam cards
+(título, descrição, datas, concluído, membros, etiquetas, lista e comentários) com o token da própria
+pessoa, e só em quadros cadastrados de que ela participa (observadores não editam). Quem entrou quando o
+token era só de leitura recebe um aviso para sair e entrar de novo. Os itens de checklist são do
+Power-Up: o Produzia confere a permissão no card e grava pela API do trello-power.
 
 - Na chave da API do Trello (`TRELLO_KEY`, em trello.com/power-ups/admin), `https://produzia.olimpo-services.com.br`
   precisa estar em **Allowed origins** para o Trello aceitar a volta para `/auth/trello` e `/oauth/trello`.

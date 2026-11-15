@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, request, send_from_directory, session
 
-from . import accounts, calendario, db, gantt, metrics, processos
+from . import accounts, calendario, db, edicao, gantt, metrics, processos
 from .trello import PowerUpClient, SourceError, TrelloClient
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -125,6 +125,7 @@ def create_app(overrides=None):
         return board
 
     app.register_blueprint(processos.bp)
+    app.register_blueprint(edicao.bp)
 
     # --- Paginas -------------------------------------------------------------
 

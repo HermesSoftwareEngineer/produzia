@@ -317,7 +317,7 @@ def day_summary(boards_data, day, tz):
             pid = item_owner(item)
             autor = item.get("concluidoPor")
             row(pid)["itensConcluidos"].append({
-                "hora": "", "card": bd.card_ref(item["cardId"]), "texto": item["texto"],
+                "id": item.get("id"), "hora": "", "card": bd.card_ref(item["cardId"]), "texto": item["texto"],
                 "checklist": item.get("checklistNome"), "dataFim": item.get("dataFim"),
                 "concluidoPor": people.get(autor)["nome"]
                 if autor and autor != pid and TRELLO_ID.match(autor) else None,
@@ -325,7 +325,7 @@ def day_summary(boards_data, day, tz):
 
         for item in pending_items(bd, day, tz):
             row(item.get("responsavelId") or NO_OWNER)["itensPendentes"].append({
-                "card": bd.card_ref(item["cardId"]), "texto": item["texto"],
+                "id": item.get("id"), "card": bd.card_ref(item["cardId"]), "texto": item["texto"],
                 "checklist": item.get("checklistNome"), "dataInicio": item.get("dataInicio"),
                 "dataFim": item.get("dataFim"), "status": item_status(item, day),
             })

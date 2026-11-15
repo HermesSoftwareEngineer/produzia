@@ -20,6 +20,12 @@ class TTLCache:
             self._data[key] = (now + ttl, value)
         return value
 
+    def drop(self, match):
+        """Descarta as entradas cuja chave (tupla) satisfaz `match` (depois de uma escrita)."""
+        with self._lock:
+            for key in [k for k in self._data if match(k)]:
+                del self._data[key]
+
     def clear(self):
         with self._lock:
             self._data.clear()

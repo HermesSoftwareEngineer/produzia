@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useBoards } from '../boards.jsx'
-import { Avatar, Empty, ErrorBox, Icon, Loading, Warnings } from '../components/ui.jsx'
+import { InlineText } from '../components/CardDrawer.jsx'
+import { useCardEditor } from '../components/editorContext.js'
+import { useToast } from '../components/Toasts.jsx'
+import { Avatar, Empty, ErrorBox, Icon, Warnings } from '../components/ui.jsx'
+import { cardApi } from '../edit.js'
 import { fmt } from '../format.js'
 import {
   STATUS, ZOOMS, dayLabel, dayNum, filterCards, groupByList, progress, scaleTiers, timelineRange, weekendIndexes,
@@ -12,6 +16,7 @@ const KEY_BOARD = 'produzia.gantt.quadro'
 const KEY_ZOOM = 'produzia.gantt.zoom'
 const KEY_LEFT = 'produzia.gantt.esquerda'
 const KEY_LINKS = 'produzia.gantt.predecessoras'
+const KEY_WRAP = 'produzia.gantt.quebrar'
 const LINK_NAMES = { TI: 'término→início', II: 'início→início', TT: 'término→término', IT: 'início→término' }
 const LEFT_DEFAULT = 340
 const LEFT_MIN = 160
@@ -41,8 +46,12 @@ export default function Gantt() {
   const [soComDatas, setSoComDatas] = useState(false)
   const [showLinks, setShowLinksState] = useState(() => readStored(KEY_LINKS, '1') !== '0')
   const setShowLinks = (on) => { setShowLinksState(on); store(KEY_LINKS, on ? '1' : '0') }
+  const [wrap, setWrapState] = useState(() => readStored(KEY_WRAP, '0') === '1')
+  const setWrap = (on) => { setWrapState(on); store(KEY_WRAP, on ? '1' : '0') }
   const [open, setOpen] = useState(() => new Set())
   const [busy, setBusy] = useState(false)
+  const { toast } = useToast()
+  const { openCard } = useCardEditor()
 
   const board = boards.find((b) => b.id === boardId) || boards[0]
   const hasLinksFor = (d) => Boolean(d?.cards?.some((c) => c.itens.some((i) => i.predecessoras?.length)))
@@ -59,7 +68,33 @@ export default function Gantt() {
 
   const path = board ? `/gantt?quadro=${board.id}` : null
   const { data, error, loading } = useFetch(path, [path, version])
-  const current = data && board && data.quadro.id === board.id ? data : null
+  const fetched = data && board && data.quadro.id === board.id ? data : null
+
+  // Alterações feitas aqui (marcar item, renomear) aparecem na hora, antes de o Power-Up responder.
+  // Chegando dados novos do servidor, elas já estão neles.
+  const [patches, setPatches] = useState(() => new Map())
+  useEffect(() => { setPatches(new Map()) }, [data])
+  const current = useMemo(() => applyPatches(fetched, patches), [fetched, patches])
+  const patchItem = (id, patch) => setPatches((prev) => new Map(prev).set(id, { ...prev.get(id), ...patch }))
+
+  async function saveItem(card, item, patch, { text, undo } = {}) {
+    const before = Object.fromEntries(Object.keys(patch).map((k) => [k, item[k]]))
+    patchItem(item.id, patch)
+    try {
+      await cardApi.updateItem(card.id, item.id, patch)
+      if (text) {
+        toast({ text, tone: 'good', action: undo ? { label: 'Desfazer', onClick: () => saveItem(card, { ...item, ...patch }, before) } : undefined })
+      }
+    } catch (err) {
+      patchItem(item.id, before)
+      toast({ text: `Não foi possível salvar: ${err.message}`, tone: 'bad' })
+    }
+  }
+  const editing = {
+    toggle: (card, item) => saveItem(card, item, { feito: !item.feito }, { text: item.feito ? 'Item reaberto.' : 'Item concluído.', undo: true }),
+    rename: (card, item, texto) => saveItem(card, item, { texto }, { text: 'Item renomeado.', undo: true }),
+    open: (card, item) => openCard?.(card.id, { itemId: item?.id }),
+  }
 
   const people = useMemo(() => new Map((current?.pessoas || []).map((p) => [p.id, p])), [current])
   const visible = useMemo(
@@ -138,6 +173,10 @@ export default function Gantt() {
             <input type="checkbox" checked={soComDatas} onChange={(e) => setSoComDatas(e.target.checked)} />
             <span>Só com datas</span>
           </label>
+          <label className="toggle" title="Mostra o texto inteiro dos cards e itens, em várias linhas">
+            <input type="checkbox" checked={wrap} onChange={(e) => setWrap(e.target.checked)} />
+            <span>Quebrar linha</span>
+          </label>
           {hasLinks && (
             <label className="toggle" title="Linhas ligando cada item às suas predecessoras">
               <input type="checkbox" checked={showLinks} onChange={(e) => setShowLinks(e.target.checked)} />
@@ -156,7 +195,7 @@ export default function Gantt() {
         </div>
       )}
 
-      {loading && !current ? <Loading /> : current && (
+      {loading && !current ? <GanttSkeleton /> : current && (
         !current.cards.length
           ? <Empty title="Quadro sem cards abertos">Os cards abertos do quadro aparecem aqui com suas datas.</Empty>
           : (
@@ -170,12 +209,25 @@ export default function Gantt() {
               )}
               {visible.length
                 ? <Timeline data={current} groups={groups} zoom={zoom} people={people} open={open} onToggle={toggle}
-                  showLinks={showLinks && hasLinks} />
+                  showLinks={showLinks && hasLinks} wrap={wrap} editing={editing} />
                 : <Empty title="Nada para mostrar">Nenhum card com esses filtros.</Empty>}
               <Legend links={showLinks && hasLinks} />
             </>
           )
       )}
+    </div>
+  )
+}
+
+function GanttSkeleton() {
+  return (
+    <div className="gt-frame gt-skeleton" aria-busy="true" aria-label="Buscando dados no Trello">
+      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+        <div key={i} className="gt-sk-row">
+          <span className="sk sk-line" style={{ width: `${40 + ((i * 17) % 45)}%` }} />
+          <span className="sk sk-bar" style={{ marginLeft: `${(i * 23) % 50}%`, width: `${15 + ((i * 11) % 30)}%` }} />
+        </div>
+      ))}
     </div>
   )
 }
@@ -287,7 +339,7 @@ function linkConflict(item, pred, tipo, lag) {
   return (tipo === 'TI' || tipo === 'TT') && item.feito && !pred.feito
 }
 
-function Timeline({ data, groups, zoom, people, open, onToggle, showLinks }) {
+function Timeline({ data, groups, zoom, people, open, onToggle, showLinks, wrap, editing }) {
   const scrollRef = useRef(null)
   const frameRef = useRef(null)
   const split = useSplit(frameRef)
@@ -341,7 +393,9 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks }) {
     return map
   }, [groups])
 
-  // Posicao vertical de cada linha (card ou item), medida depois de desenhar.
+  // Posicao vertical de cada linha (card ou item), medida depois de desenhar. Com "Quebrar linha" a
+  // altura varia: mede de novo quando o corpo muda de tamanho (largura da lista, fontes, janela).
+  const [measure, setMeasure] = useState(0)
   useLayoutEffect(() => {
     if (!showLinks || !bodyRef.current) return
     const top = bodyRef.current.getBoundingClientRect().top
@@ -351,7 +405,18 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks }) {
       next[el.dataset.row] = r.top - top + r.height / 2
     })
     setRows(next)
-  }, [showLinks, groups, open, zoom, split.width])
+  }, [showLinks, groups, open, zoom, split.width, wrap, measure])
+
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!showLinks || !el) return undefined
+    let h = el.offsetHeight
+    const ro = new ResizeObserver(() => {
+      if (el.offsetHeight !== h) { h = el.offsetHeight; setMeasure((n) => n + 1) }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [showLinks])
 
   const links = useMemo(() => {
     if (!showLinks) return []
@@ -400,7 +465,7 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks }) {
   }
 
   return (
-    <div className="gt-frame" ref={frameRef} style={{ '--gt-left': `${split.width}px` }}>
+    <div className={`gt-frame ${wrap ? 'gt-wrap' : ''}`} ref={frameRef} style={{ '--gt-left': `${split.width}px` }}>
     <div className="gt-scroll" ref={scrollRef} style={{ '--gt-w': `${width}px` }}>
       <div className="gt-inner">
         <div className="gt-header">
@@ -474,9 +539,10 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks }) {
                             <Icon name="chevron" />
                           </button>
                         ) : <span className="gt-caret-space" />}
-                        <a className="gt-card-name truncate" href={card.url} target="_blank" rel="noreferrer" title={`${card.nome} (abrir no Trello)`}>
+                        <button type="button" className="gt-card-name gt-text" onClick={() => editing.open(card)}
+                          title={`${card.nome} (abrir e editar)`}>
                           {card.nome}
-                        </a>
+                        </button>
                         {card.itensTotal > 0 && <span className="gt-n">{card.itensFeitos}/{card.itensTotal}</span>}
                         <span className="gt-avatars">
                           {card.membros.slice(0, 3).map((id) => people.get(id) && <Avatar key={id} pessoa={people.get(id)} size={20} />)}
@@ -512,18 +578,30 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks }) {
                       return (
                         <div key={item.id} className="gt-row gt-row-item" data-row={`item:${item.id}`}>
                           <div className="gt-label">
-                            <Icon name={item.feito ? 'item' : 'circle'} className={item.feito ? 'gt-item-done' : 'gt-item-open'} />
-                            <span className={`truncate ${item.feito ? 'gt-feito' : ''}`} title={item.texto}>{item.texto}</span>
+                            <button type="button" className={`gt-check ${item.feito ? 'on' : ''}`} aria-pressed={item.feito}
+                              aria-label={item.feito ? 'Desmarcar item' : 'Marcar item como concluído'}
+                              title={item.feito ? 'Concluído (clique para reabrir)' : 'Marcar como concluído'}
+                              onClick={() => editing.toggle(card, item)}>
+                              <Icon name={item.feito ? 'item' : 'circle'} className={item.feito ? 'gt-item-done' : 'gt-item-open'} />
+                            </button>
+                            <InlineText trigger="dblclick" className={`gt-text gt-item-text ${item.feito ? 'gt-feito' : ''}`}
+                              value={item.texto} label="Texto do item" onSave={(texto) => editing.rename(card, item, texto)} />
+                            <button type="button" className="gt-edit" aria-label="Editar item" title="Editar item (datas, responsável…)"
+                              onClick={() => editing.open(card, item)}>
+                              <Icon name="edit" />
+                            </button>
                             {!item.inicio && <span className="gt-nodate">sem datas</span>}
                             {dono && <Avatar pessoa={dono} size={18} />}
                           </div>
                           <div className="gt-track">
                             {item.inicio && (item.marco ? (
-                              <span className={`gt-milestone gt-milestone-item s-${item.status}`} tabIndex={0}
-                                style={{ left: bar(item).left + px / 2 }} {...tipHandlers(item.texto, item, itemExtra)} />
+                              <span className={`gt-milestone gt-milestone-item s-${item.status}`} tabIndex={0} role="button"
+                                style={{ left: bar(item).left + px / 2 }} {...tipHandlers(item.texto, item, itemExtra)}
+                                onClick={() => editing.open(card, item)} onKeyDown={(e) => e.key === 'Enter' && editing.open(card, item)} />
                             ) : (
-                              <span className={`gt-bar gt-bar-item s-${item.status}`} tabIndex={0} style={bar(item)}
-                                {...tipHandlers(item.texto, item, itemExtra)} />
+                              <span className={`gt-bar gt-bar-item s-${item.status}`} tabIndex={0} role="button" style={bar(item)}
+                                {...tipHandlers(item.texto, item, itemExtra)}
+                                onClick={() => editing.open(card, item)} onKeyDown={(e) => e.key === 'Enter' && editing.open(card, item)} />
                             ))}
                           </div>
                         </div>
@@ -558,4 +636,30 @@ function Tooltip({ tip, hoje }) {
       <span className={`gt-tip-status s-${x.status}`}><i className={`gt-swatch s-${x.status}`} />{STATUS[x.status]}</span>
     </div>
   )
+}
+
+// --- Edição otimista -------------------------------------------------------------
+
+// Mesmas regras do servidor (app/gantt.py).
+function statusOf(done, inicio, fim, hoje) {
+  if (done) return 'concluido'
+  if (!fim) return 'semdata'
+  if (fim < hoje) return 'atrasado'
+  if (inicio && inicio > hoje) return 'futuro'
+  return 'andamento'
+}
+
+function applyPatches(data, patches) {
+  if (!data || !patches.size) return data
+  const cards = data.cards.map((card) => {
+    if (!card.itens.some((i) => patches.has(i.id))) return card
+    const itens = card.itens.map((i) => {
+      const p = patches.get(i.id)
+      if (!p) return i
+      const next = { ...i, ...p }
+      return { ...next, status: statusOf(next.feito || card.concluido, next.inicio, next.fim, data.hoje) }
+    })
+    return { ...card, itens, itensFeitos: itens.filter((i) => i.feito).length }
+  })
+  return { ...data, cards }
 }

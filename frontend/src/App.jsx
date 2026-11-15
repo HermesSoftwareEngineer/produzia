@@ -3,6 +3,8 @@ import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'reac
 import { api } from './api.js'
 import { BoardsProvider, useBoards } from './boards.jsx'
 import BoardFilter from './components/BoardFilter.jsx'
+import { CardEditorProvider } from './components/CardDrawer.jsx'
+import { ToastProvider } from './components/Toasts.jsx'
 import { Avatar, Icon, Loading } from './components/ui.jsx'
 import Calendario from './pages/Calendario.jsx'
 import Dashboard from './pages/Dashboard.jsx'
@@ -43,7 +45,11 @@ export default function App() {
   }
   return (
     <BoardsProvider>
-      <Shell user={user} onLogout={() => setUser(null)} />
+      <ToastProvider>
+        <CardEditorProvider>
+          <Shell user={user} onLogout={() => setUser(null)} />
+        </CardEditorProvider>
+      </ToastProvider>
     </BoardsProvider>
   )
 }

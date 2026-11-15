@@ -7,6 +7,20 @@ import { TYPES, VIEWS, WEEKDAYS, dayCounts, filterTasks, groupByDay, periodTitle
 } from '../calendario.js'
 import { addDays, fmt, parseDay, shortDate, toIso } from '../format.js'
 import { useFetch } from '../useFetch.js'
+import { useCardEditor } from '../components/editorContext.js'
+
+const itemIdOf = (t) => (t.tipo === 'item' ? t.id.replace(/^item:/, '') : undefined)
+
+// Tarefa do calendário: abre o editor do card no Produzia (arquivado vai para o Trello).
+function TaskOpen({ t, title, children }) {
+  const { openCard } = useCardEditor()
+  if (!openCard || t.card.arquivado) return <a href={t.card.url} target="_blank" rel="noreferrer" title={title}>{children}</a>
+  return (
+    <button type="button" className="cal-open" title={title} onClick={() => openCard(t.card.id, { itemId: itemIdOf(t) })}>
+      {children}
+    </button>
+  )
+}
 
 const MONTH_LIMIT = 4
 const CURRENT_LABEL = { mes: 'Mês atual', semana: 'Semana atual', dia: 'Hoje' }
@@ -251,10 +265,10 @@ function DayColumn({ day, list, hoje, onPick, listMode }) {
           {list.map((t) => (
             <li key={t.id} className={`cal-line ${t.concluido ? 'done' : ''}`}>
               <TaskIcon t={t} />
-              <a href={t.card.url} target="_blank" rel="noreferrer" title={tip(t)}>
+              <TaskOpen t={t} title={tip(t)}>
                 <span className="cal-line-title">{t.titulo}</span>
                 <span className="cal-line-meta">{t.tipo === 'card' ? `Card · ${t.card.quadro}` : t.card.nome}</span>
-              </a>
+              </TaskOpen>
             </li>
           ))}
         </ul>
@@ -323,7 +337,7 @@ function DayItem({ t, showDate }) {
           {t.titulo}
         </span>
         {notes.some(Boolean) && <span className="feed-note">{notes.filter(Boolean).join(' · ')}</span>}
-        <CardLink card={card} />
+        <CardLink card={card} itemId={itemIdOf(t)} />
       </div>
       <div className="cal-side">
         <span className="cal-avatars">
