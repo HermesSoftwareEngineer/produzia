@@ -121,3 +121,18 @@ def test_gantt_items_carry_predecessors(gclient):
         {"id": "x9", "tipo": "II", "defasagem": 0, "externa": True, "texto": "Fora"},
     ]
     assert items["i5"]["predecessoras"] == []
+
+
+def test_gantt_keeps_trello_order_and_checklist():
+    """Itens na ordem do Power-Up (checklist e posicao), nao por data ou nome."""
+    board = {"id": BOARD, "nome": "Q", "url": "u", "doneListIds": []}
+    card = {"id": CARD3, "name": "C", "idList": L_TODO, "idMembers": []}
+    mk = lambda i, cl, pos, d: {"id": i, "cardId": CARD3, "checklistId": cl, "checklistNome": cl.upper(),  # noqa: E731
+                                "texto": i, "posicao": pos, "dataInicio": d, "dataFim": d}
+    items = [mk("z", "b", 1, "2026-11-01"), mk("y", "b", 2, None), mk("a", "a", 2, "2026-11-05"),
+             mk("b", "a", 1, "2026-11-30")]
+    data = gantt.build(board, [{"id": L_TODO, "name": "L", "pos": 1}], [], [card], items,
+                       ZoneInfo("America/Sao_Paulo"), date(2026, 11, 11))
+    itens = data["cards"][0]["itens"]
+    assert [(i["id"], i["checklistId"]) for i in itens] == [("z", "b"), ("y", "b"), ("b", "a"), ("a", "a")]
+    assert all("_pos" not in i for i in itens)

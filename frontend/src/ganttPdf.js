@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { STATUS, dateOf, dayNum, monthShort, visibleRange } from './gantt.js'
+import { STATUS, dateOf, dayNum, groupByChecklist, monthShort, visibleRange } from './gantt.js'
 import { clean, drawIcon } from './pdf.js'
 
 const INK = [15, 23, 42]
@@ -117,15 +117,21 @@ export function exportGanttPdf({ data, groups, people, filtros }) {
           fmtDay(card.inicio), fmtDay(card.fim), clean(STATUS[card.status]), '',
         ],
       })
-      for (const item of card.visiveis) {
+      for (const cl of groupByChecklist(card.visiveis)) {
+        body.push({
+          kind: 'cl', x: { ...cl, marco: false },
+          cells: ['', `   ${clean(cl.nome)}  (${cl.feitos}/${cl.itens.length})`, '', fmtDay(cl.inicio), fmtDay(cl.fim), '', ''],
+        })
+        for (const item of cl.itens) {
         body.push({
           kind: 'item', x: item,
           cells: [
-            '', `   ${clean(item.texto)}`,
+            '', `      ${clean(item.texto)}`,
             clean(item.responsavel ? people.get(item.responsavel)?.nome : '') || '—',
             fmtDay(item.inicio), fmtDay(item.fim), clean(STATUS[item.status]), '',
           ],
         })
+        }
       }
     })
   }
@@ -163,6 +169,10 @@ export function exportGanttPdf({ data, groups, people, filtros }) {
       if (!row) return
       if (row.kind === 'card' && c.column.index === 1) c.cell.styles.fontStyle = 'bold'
       if (row.kind === 'item' && c.column.index <= 2) c.cell.styles.textColor = c.column.index === 1 ? [51, 65, 85] : MUTED
+      if (row.kind === 'cl' && c.column.index <= 4) {
+        c.cell.styles.textColor = MUTED
+        if (c.column.index === 1) { c.cell.styles.fontStyle = 'bold'; c.cell.styles.fontSize = 6.8 }
+      }
       if (c.column.index === 5) c.cell.styles.textColor = TONES[row.x.status]?.fg || MUTED
     },
     didDrawCell: (c) => {
@@ -211,6 +221,10 @@ export function exportGanttPdf({ data, groups, people, filtros }) {
           doc.setFillColor(...tone.fg)
           doc.roundedRect(x1, cy - h / 2, pw, h, 0.6, 0.6, 'F')
         }
+      } else if (row.kind === 'cl') {
+        const h = 1.1
+        doc.setFillColor(...tone.bg).setDrawColor(...tone.fg).setLineWidth(0.15)
+        doc.roundedRect(x1, cy - h / 2, w, h, 0.4, 0.4, 'FD')
       } else {
         const h = 1.6
         doc.setFillColor(...tone.fg)

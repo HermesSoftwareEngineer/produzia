@@ -8,7 +8,7 @@ import { Avatar, Empty, ErrorBox, Icon, Warnings } from '../components/ui.jsx'
 import { cardApi } from '../edit.js'
 import { fmt } from '../format.js'
 import {
-  STATUS, ZOOMS, dayLabel, dayNum, filterCards, groupByList, progress, scaleTiers, timelineRange, weekendIndexes,
+  STATUS, ZOOMS, dayLabel, dayNum, filterCards, groupByChecklist, groupByList, progress, scaleTiers, timelineRange, weekendIndexes,
 } from '../gantt.js'
 import { useFetch } from '../useFetch.js'
 
@@ -35,7 +35,7 @@ function store(key, value) {
 }
 
 export default function Gantt() {
-  const { boards, loaded, version } = useBoards()
+  const { boards, loaded, version, refresh } = useBoards()
   const [boardId, setBoardId] = useState(() => readStored(KEY_BOARD, ''))
   const [zoom, setZoomState] = useState(() => {
     const z = readStored(KEY_ZOOM, 'semana')
@@ -94,6 +94,30 @@ export default function Gantt() {
     toggle: (card, item) => saveItem(card, item, { feito: !item.feito }, { text: item.feito ? 'Item reaberto.' : 'Item concluído.', undo: true }),
     rename: (card, item, texto) => saveItem(card, item, { texto }, { text: 'Item renomeado.', undo: true }),
     open: (card, item) => openCard?.(card.id, { itemId: item?.id }),
+    add: async (card, checklistId, texto) => {
+      try {
+        await cardApi.addItem(card.id, checklistId, typeof texto === 'string' ? { texto } : texto)
+        toast({ text: 'Item adicionado.', tone: 'good' })
+        refresh()
+      } catch (err) {
+        toast({ text: `Não foi possível adicionar: ${err.message}`, tone: 'bad' })
+      }
+    },
+    remove: async (card, item) => {
+      patchItem(item.id, { _removido: true })
+      try {
+        await cardApi.deleteItem(card.id, item.id)
+        const body = Object.fromEntries(['texto', 'dataInicio', 'dataFim'].map((k) => [k, item[k]]))
+        if (item.responsavel) body.responsavelId = item.responsavel
+        toast({
+          text: 'Item excluído.', tone: 'good',
+          action: item.checklistId ? { label: 'Desfazer', onClick: () => editing.add(card, item.checklistId, body.texto && body) } : undefined,
+        })
+      } catch (err) {
+        patchItem(item.id, { _removido: false })
+        toast({ text: `Não foi possível excluir: ${err.message}`, tone: 'bad' })
+      }
+    },
   }
 
   const people = useMemo(() => new Map((current?.pessoas || []).map((p) => [p.id, p])), [current])
@@ -384,6 +408,16 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks, wrap,
 
   const names = (ids) => ids.map((id) => people.get(id)?.nome).filter(Boolean).join(', ')
 
+  // Checklists recolhidas dentro dos cards abertos (chave "card:checklist").
+  const [shut, setShut] = useState(() => new Set())
+  const toggleChecklist = (key) => setShut((prev) => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
+  const clKey = (card, item) => `${card.id}:${item.checklistId || `nome:${item.checklist || ''}`}`
+
   // --- Predecessoras: setas entre as barras ---
   const bodyRef = useRef(null)
   const [rows, setRows] = useState({})
@@ -405,7 +439,7 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks, wrap,
       next[el.dataset.row] = r.top - top + r.height / 2
     })
     setRows(next)
-  }, [showLinks, groups, open, zoom, split.width, wrap, measure])
+  }, [showLinks, groups, open, shut, zoom, split.width, wrap, measure])
 
   useEffect(() => {
     const el = bodyRef.current
@@ -421,7 +455,11 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks, wrap,
   const links = useMemo(() => {
     if (!showLinks) return []
     const out = []
-    const anchor = ({ item, card }) => (open.has(card.id) ? `item:${item.id}` : `card:${card.id}`)
+    const anchor = ({ item, card }) => {
+      if (!open.has(card.id)) return `card:${card.id}`
+      const key = clKey(card, item)
+      return shut.has(key) ? `cl:${key}` : `item:${item.id}`
+    }
     const edge = (x, side) => {
       const b = bar(x)
       if (x.marco) return b.left + px / 2
@@ -451,7 +489,7 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks, wrap,
     })
     return out
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showLinks, itemIndex, rows, open, px, range.start])
+  }, [showLinks, itemIndex, rows, open, shut, px, range.start])
 
   const linkPath = (l) => {
     // Cotovelos como no MS Project: sai para o lado, desce/sobe e entra na barra.
@@ -564,7 +602,30 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks, wrap,
                       </div>
                     </div>
 
-                    {isOpen && card.visiveis.map((item) => {
+                    {isOpen && groupByChecklist(card.visiveis).map((cl) => {
+                      const key = `${card.id}:${cl.id}`
+                      const clOpen = !shut.has(key)
+                      return (
+                      <div key={key} className="gt-cl-group">
+                        <div className="gt-row gt-row-cl" data-row={`cl:${key}`}>
+                          <div className="gt-label">
+                            <button className={`gt-caret ${clOpen ? 'open' : ''}`} type="button" onClick={() => toggleChecklist(key)}
+                              aria-expanded={clOpen} aria-label={clOpen ? 'Recolher checklist' : 'Mostrar checklist'}>
+                              <Icon name="chevron" />
+                            </button>
+                            <span className="gt-cl-name gt-text" title={cl.nome}>{cl.nome}</span>
+                            <span className="gt-n">{cl.feitos}/{cl.itens.length}</span>
+                          </div>
+                          <div className="gt-track">
+                            {cl.inicio && (
+                              <span className={`gt-bar gt-bar-cl s-${cl.status}`} style={bar(cl)}
+                                {...tipHandlers(cl.nome, { ...cl, marco: cl.inicio === cl.fim }, [`Checklist · ${cl.feitos}/${cl.itens.length} feitos`])}>
+                                <span className="gt-prog" style={{ width: `${cl.itens.length ? Math.round((100 * cl.feitos) / cl.itens.length) : 0}%` }} />
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {clOpen && cl.itens.map((item) => {
                       const dono = item.responsavel ? people.get(item.responsavel) : null
                       const itemExtra = [
                         item.checklist ? `Checklist: ${item.checklist}` : null,
@@ -590,6 +651,10 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks, wrap,
                               onClick={() => editing.open(card, item)}>
                               <Icon name="edit" />
                             </button>
+                            <button type="button" className="gt-edit gt-del" aria-label="Excluir item" title="Excluir item"
+                              onClick={() => editing.remove(card, item)}>
+                              <Icon name="trash" />
+                            </button>
                             {!item.inicio && <span className="gt-nodate">sem datas</span>}
                             {dono && <Avatar pessoa={dono} size={18} />}
                           </div>
@@ -605,6 +670,20 @@ function Timeline({ data, groups, zoom, people, open, onToggle, showLinks, wrap,
                             ))}
                           </div>
                         </div>
+                      )
+                    })}
+                        {clOpen && !String(cl.id).startsWith('nome:') && (
+                          <div className="gt-row gt-row-item gt-row-add">
+                            <div className="gt-label">
+                              <InlineText value="" label="Novo item" className="gt-text gt-add"
+                                onSave={(texto) => editing.add(card, cl.id, texto)}>
+                                <Icon name="plus" />Adicionar item
+                              </InlineText>
+                            </div>
+                            <div className="gt-track" />
+                          </div>
+                        )}
+                      </div>
                       )
                     })}
                   </div>
@@ -658,8 +737,8 @@ function applyPatches(data, patches) {
       if (!p) return i
       const next = { ...i, ...p }
       return { ...next, status: statusOf(next.feito || card.concluido, next.inicio, next.fim, data.hoje) }
-    })
-    return { ...card, itens, itensFeitos: itens.filter((i) => i.feito).length }
+    }).filter((i) => !i._removido)
+    return { ...card, itens, itensTotal: itens.length, itensFeitos: itens.filter((i) => i.feito).length }
   })
   return { ...data, cards }
 }

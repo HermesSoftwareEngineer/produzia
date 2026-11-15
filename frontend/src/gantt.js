@@ -133,6 +133,29 @@ export function filterCards(cards, { pessoa, ocultarConcluidos, soComDatas }) {
   return out
 }
 
+// Agrupa os itens de um card pela checklist, na ordem em que chegam (a mesma do Trello).
+export function groupByChecklist(itens) {
+  const map = new Map()
+  for (const item of itens) {
+    const id = item.checklistId || `nome:${item.checklist || ''}`
+    if (!map.has(id)) map.set(id, { id, nome: item.checklist || 'Checklist', itens: [] })
+    map.get(id).itens.push(item)
+  }
+  return [...map.values()].map((g) => {
+    const datas = g.itens.filter((i) => i.inicio)
+    const st = new Set(g.itens.map((i) => i.status))
+    const status = st.size === 1 ? [...st][0]
+      : ['atrasado', 'andamento', 'futuro', 'semdata', 'concluido'].find((x) => st.has(x))
+    return {
+      ...g,
+      status,
+      feitos: g.itens.filter((i) => i.feito).length,
+      inicio: datas.length ? datas.reduce((m, i) => (i.inicio < m ? i.inicio : m), datas[0].inicio) : null,
+      fim: datas.length ? datas.reduce((m, i) => (i.fim > m ? i.fim : m), datas[0].fim) : null,
+    }
+  })
+}
+
 // Agrupa os cards visíveis pelas listas, na ordem do quadro.
 export function groupByList(listas, cards) {
   const byList = new Map(listas.map((l) => [l.id, { lista: l, cards: [] }]))

@@ -580,7 +580,7 @@ input[type='date'] { color-scheme: inherit; }
 .gt-group + .gt-group .gt-row-list { border-top: 1px solid var(--line); }
 .gt-row-card { height: 36px; }
 .gt-row-item { height: 30px; }
-.gt-row-item .gt-label { padding-left: 46px; font-size: 12.5px; color: var(--ink-2); gap: 6px; }
+.gt-row-item .gt-label { padding-left: 64px; font-size: 12.5px; color: var(--ink-2); gap: 6px; }
 .gt-card-name, :root[data-theme='dark'] .gt-card-name { color: var(--ink); font-weight: 500; font-size: 13.5px; }
 .gt-card-name:hover, :root[data-theme='dark'] .gt-card-name:hover { color: var(--brand); }
 .gt-n { flex: none; font-size: 11.5px; color: var(--muted-2); font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; font-weight: 500; }
@@ -638,7 +638,8 @@ input[type='date'] { color-scheme: inherit; }
 @media (max-width: 860px) {
   .gt-page { --gt-left: 168px; }
   .gt-avatars, .gt-row-card .gt-n { display: none; }
-  .gt-row-item .gt-label { padding-left: 26px; }
+  .gt-row-item .gt-label { padding-left: 40px; }
+  .gt-row-cl .gt-label { padding-left: 20px; }
   .gt-row-item .avatar, .gt-nodate { display: none; }
   .gt-label { padding: 0 8px; }
   .gt-scroll { max-height: 70vh; }
@@ -1232,6 +1233,7 @@ button.gt-card-name { border: 0; background: none; padding: 0; font: inherit; cu
 .gt-wrap .gt-row-list { height: auto; min-height: 34px; }
 .gt-wrap .gt-row-card { height: auto; min-height: 36px; }
 .gt-wrap .gt-row-item { height: auto; min-height: 30px; }
+.gt-wrap .gt-row-cl { height: auto; min-height: 28px; }
 .gt-wrap .gt-label { padding-top: 6px; padding-bottom: 6px; }
 .gt-wrap .gt-label .truncate, .gt-wrap .gt-text { white-space: normal; overflow: visible; overflow-wrap: anywhere; line-height: 1.35; }
 @media (hover: none) { .gt-edit { opacity: 1; } }
@@ -1281,3 +1283,21 @@ body:has(.batch-bar.show) .toasts { bottom: 84px; }
   .batch-progress { min-width: 0; flex: 1; }
   body:has(.batch-bar.show) .toasts { bottom: 150px; }
 }
+
+/* Checklists dentro do card aberto */
+.gt-row-cl { height: 28px; }
+.gt-row-cl .gt-label { padding-left: 34px; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.gt-row-cl .gt-caret { width: 20px; height: 20px; }
+.gt-cl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-bar-cl { height: 6px; top: 50%; transform: translateY(-50%); border-radius: 3px; background: color-mix(in srgb, var(--s-fg, var(--muted-2)) 28%, transparent); overflow: hidden; }
+.gt-bar-cl .gt-prog { display: block; height: 100%; background: var(--s-fg, var(--muted-2)); }
+
+/* Adicionar / excluir item no cronograma */
+.gt-del:hover { color: var(--bad); }
+.gt-row-add { height: 28px; }
+.gt-row-add .gt-label { color: var(--muted-2); }
+.gt-add { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; border-radius: 6px; padding: 2px 6px; margin-left: -6px; }
+.gt-add .icon { width: 14px; height: 14px; }
+.gt-add:hover, .gt-add:focus-visible { color: var(--brand); background: var(--soft); }
+.gt-row-add .inline-edit { margin: 0; width: 100%; font-size: 12.5px; }
+.gt-wrap .gt-row-add { height: auto; min-height: 28px; }

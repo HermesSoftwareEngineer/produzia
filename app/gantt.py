@@ -66,7 +66,9 @@ def build(board, lists, members, cards, items, tz, day):
         card_done = in_done or bool(card.get("dueComplete"))
 
         out_items = []
+        cl_pos = {}
         for item in items_by_card.get(card["id"], []):
+            cl_pos.setdefault(item.get("checklistId"), len(cl_pos))
             ini, fim, marco = _range(_valid_day(item.get("dataInicio")), _valid_day(item.get("dataFim")))
             feito = bool(item.get("feito"))
             owner = item.get("responsavelId")
@@ -76,6 +78,7 @@ def build(board, lists, members, cards, items, tz, day):
                 "id": item.get("id"),
                 "texto": item.get("texto") or "",
                 "checklist": item.get("checklistNome"),
+                "checklistId": item.get("checklistId"),
                 "dataInicio": _valid_day(item.get("dataInicio")),
                 "dataFim": _valid_day(item.get("dataFim")),
                 "inicio": ini,
@@ -83,6 +86,7 @@ def build(board, lists, members, cards, items, tz, day):
                 "marco": marco,
                 "responsavel": owner,
                 "feito": feito,
+                "_pos": item.get("posicao") or 0,
                 "status": _status(feito or card_done, ini, fim, hoje),
                 # Predecessoras do Power-Up (como no MS Project); as de outros quadros vem marcadas.
                 "predecessoras": [
@@ -92,7 +96,10 @@ def build(board, lists, members, cards, items, tz, day):
                     for p in item.get("predecessoras") or [] if p.get("id")
                 ],
             })
-        out_items.sort(key=lambda i: (i["checklist"] or "", i["inicio"] or "9999", i["texto"].lower()))
+        # Mesma ordem do Trello: o Power-Up ja devolve por checklist (posicao) e item (posicao).
+        out_items.sort(key=lambda i: (cl_pos.get(i["checklistId"], 0), i["_pos"]))
+        for i in out_items:
+            del i["_pos"]
 
         start = _local_day(card.get("start"), tz)
         due = _local_day(card.get("due"), tz)
