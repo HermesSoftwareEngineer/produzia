@@ -75,25 +75,35 @@ def _check_id(value, label="Card", pattern=TRELLO_ID):
     return value
 
 
+def editable_board(board_id, viewer=None):
+    """(viewer, quadro) se a pessoa pode editar o quadro; senao 403/404 com mensagem clara."""
+    viewer = viewer or accounts.current_viewer()
+    board = db.get_board(board_id) if isinstance(board_id, str) and TRELLO_ID.match(board_id) else None
+    if not board or not viewer.can_see(board_id):
+        raise EditError(404, "Quadro não cadastrado no Produzia ou sem acesso.")
+    if not viewer.admin:
+        mine = next((m for m in viewer.trello.memberships(board_id) if m.get("idMember") == viewer.id), None)
+        if mine and mine.get("memberType") == "observer":
+            raise EditError(403, "Você é observador deste quadro no Trello e não pode editar.")
+    return viewer, board
+
+
 def editable_card(card_id):
     """(viewer, quadro) se a pessoa pode editar o card; senao 403/404 com mensagem clara."""
     _check_id(card_id)
     viewer = accounts.current_viewer()
-    trello = viewer.trello
     try:
-        board_id = trello.card_board(card_id)
+        board_id = viewer.trello.card_board(card_id)
     except SourceError as exc:
         if exc.status == 404:
             raise EditError(404, "Card não encontrado no Trello (ou sem acesso).") from exc
         raise
-    board = db.get_board(board_id)
-    if not board or not viewer.can_see(board_id):
-        raise EditError(404, "O card é de um quadro não cadastrado no Produzia ou sem acesso.")
-    if not viewer.admin:
-        mine = next((m for m in trello.memberships(board_id) if m.get("idMember") == viewer.id), None)
-        if mine and mine.get("memberType") == "observer":
-            raise EditError(403, "Você é observador deste quadro no Trello e não pode editar.")
-    return viewer, board
+    try:
+        return editable_board(board_id, viewer)
+    except EditError as exc:
+        if exc.status == 404:
+            raise EditError(404, "O card é de um quadro não cadastrado no Produzia ou sem acesso.") from exc
+        raise
 
 
 def _forget(viewer, board_id):
@@ -230,6 +240,10 @@ def card_update(card_id):
         if not isinstance(body["concluido"], bool):
             raise EditError(400, "O campo concluido deve ser verdadeiro ou falso.")
         fields["dueComplete"] = body["concluido"]
+    if "arquivado" in body:
+        if not isinstance(body["arquivado"], bool):
+            raise EditError(400, "O campo arquivado deve ser verdadeiro ou falso.")
+        fields["closed"] = body["arquivado"]
     if "listaId" in body:
         lists = {l["id"]: l for l in trello.lists(board["id"])}
         target = lists.get(body["listaId"])
@@ -266,6 +280,75 @@ def card_update(card_id):
     if anterior:
         out["anterior"] = anterior
     return jsonify(out)
+
+
+def _open_lists(trello, board):
+    done = set(board.get("doneListIds") or [])
+    return [{"id": l["id"], "nome": l["name"], "concluida": l["id"] in done}
+            for l in sorted(trello.lists(board["id"]), key=lambda l: l.get("pos", 0)) if not l.get("closed")]
+
+
+@bp.get("/quadros/<board_id>/edicao")
+@web_only
+def board_options(board_id):
+    """Listas, membros e cards abertos de um quadro: o que a tela precisa para criar tarefas."""
+    viewer, board = editable_board(board_id)
+    trello = viewer.trello
+    people = People()
+    for m in trello.members(board["id"]):
+        people.add(m)
+    lists = _open_lists(trello, board)
+    order = {l["id"]: i for i, l in enumerate(lists)}
+    cards = [{"id": c["id"], "nome": c.get("name") or "", "listaId": c.get("idList")}
+             for c in trello.open_cards(board["id"]) if c.get("idList") in order]
+    cards.sort(key=lambda c: (order[c["listaId"]], c["nome"].lower()))
+    return jsonify(
+        quadro={"id": board["id"], "nome": board["nome"]},
+        listas=lists,
+        membros=sorted(people.by_id.values(), key=lambda p: p["nome"].lower()),
+        cards=cards,
+        euId=_my_trello_id(viewer),
+    )
+
+
+@bp.post("/quadros/<board_id>/cards")
+@web_only
+def card_create(board_id):
+    viewer, board = editable_board(board_id)
+    trello, tz = viewer.trello, _tz()
+    body = _body()
+    nome = body.get("nome")
+    if not isinstance(nome, str) or not nome.strip():
+        raise EditError(400, "Escreva o título do card.")
+    if len(nome) > MAX_NAME:
+        raise EditError(400, "Título longo demais.")
+    lists = {l["id"]: l for l in _open_lists(trello, board)}
+    if body.get("listaId") not in lists:
+        raise EditError(400, "Escolha uma lista deste quadro.")
+    fields = {"idList": body["listaId"], "name": nome.strip(), "pos": "bottom"}
+    desc = body.get("descricao")
+    if desc:
+        if not isinstance(desc, str) or len(desc) > MAX_DESC:
+            raise EditError(400, f"A descrição pode ter até {MAX_DESC} caracteres.")
+        fields["desc"] = desc
+    ini_day = _parse_day(body.get("inicio"), "Início")
+    fim_day = _parse_day(body.get("prazo"), "Prazo")
+    if ini_day and fim_day and ini_day > fim_day:
+        raise EditError(400, "O início não pode ser depois do prazo.")
+    if ini_day:
+        fields["start"] = to_trello_ts(ini_day, None, tz)
+    if fim_day:
+        fields["due"] = to_trello_ts(fim_day, None, tz)
+    membros = body.get("membros") or []
+    if not isinstance(membros, list):
+        raise EditError(400, "Membros inválidos.")
+    for mid in membros:
+        _board_member(trello, board["id"], _check_id(mid, "Membro"))
+    if membros:
+        fields["idMembers"] = ",".join(membros)
+    card = trello.create_card(fields)
+    _forget(viewer, board["id"])
+    return jsonify(serialize_card(card, tz)), 201
 
 
 def _board_member(trello, board_id, member_id):

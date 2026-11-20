@@ -60,6 +60,13 @@ class WritableMixin:
         self.card_data.update(fields)
         return dict(self.card_data)
 
+    def create_card(self, fields):
+        self._maybe_fail()
+        self.calls.append(("create_card", fields))
+        return {"id": "5" * 24, "name": fields["name"], "idList": fields["idList"], "due": fields.get("due"),
+                "start": fields.get("start"), "idMembers": (fields.get("idMembers") or "").split(",") if fields.get("idMembers") else [],
+                "idBoard": BOARD, "shortUrl": "https://trello.com/c/5"}
+
     def add_member(self, card_id, member_id):
         self.calls.append(("add_member", card_id, member_id))
 
@@ -259,3 +266,37 @@ def test_observer_cannot_edit(tmp_path):
     assert ana.patch(f"/api/cards/{CARD1}", json={"nome": "x"}).status_code == 200
     r = beto.patch(f"/api/cards/{CARD1}/itens/{ITEM}", json={"feito": True})
     assert r.status_code == 403 and "observador" in r.get_json()["erro"]
+
+
+def test_board_options(client):
+    data = client.get(f"/api/quadros/{BOARD}/edicao").get_json()
+    assert [l["id"] for l in data["listas"]] == [L_TODO, L_DONE]
+    assert [m["nome"] for m in data["membros"]] == ["Ana Lima", "Beto Reis"]
+    assert {c["id"] for c in data["cards"]} >= {CARD1}
+    assert client.get(f"/api/quadros/{OTHER_BOARD}/edicao").status_code == 404
+
+
+def test_create_card(app, client):
+    trello = app.config["TRELLO"]
+    r = client.post(f"/api/quadros/{BOARD}/cards",
+                    json={"nome": " Vistoria ", "listaId": L_TODO, "prazo": "2026-11-20", "membros": [ANA]})
+    assert r.status_code == 201
+    _, fields = [c for c in trello.calls if c[0] == "create_card"][0]
+    assert fields["name"] == "Vistoria" and fields["idList"] == L_TODO and fields["idMembers"] == ANA
+    assert fields["due"] == "2026-11-20T15:00:00Z" and "start" not in fields
+    assert r.get_json()["prazo"] == "2026-11-20" and ("forget", BOARD) in trello.calls
+    bad = [
+        {"nome": "", "listaId": L_TODO},
+        {"nome": "x", "listaId": "3" * 24},
+        {"nome": "x", "listaId": L_TODO, "inicio": "2026-11-21", "prazo": "2026-11-20"},
+        {"nome": "x", "listaId": L_TODO, "membros": ["7" * 24]},
+    ]
+    for body in bad:
+        assert client.post(f"/api/quadros/{BOARD}/cards", json=body).status_code == 400
+    assert client.post(f"/api/quadros/{OTHER_BOARD}/cards", json={"nome": "x", "listaId": L_TODO}).status_code == 404
+
+
+def test_archive_card(app, client):
+    assert client.patch(f"/api/cards/{CARD1}", json={"arquivado": True}).status_code == 200
+    assert last_update(app) == {"closed": True}
+    assert client.patch(f"/api/cards/{CARD1}", json={"arquivado": "sim"}).status_code == 400

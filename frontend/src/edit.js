@@ -19,6 +19,13 @@ export const cardApi = {
   addItem: (id, checklistId, body) => api(`${card(id)}/checklists/${checklistId}/itens`, { method: 'POST', body }),
   updateItem: (id, itemId, body) => api(`${card(id)}/itens/${itemId}`, { method: 'PATCH', body }),
   deleteItem: (id, itemId) => api(`${card(id)}/itens/${itemId}`, { method: 'DELETE' }),
+  archive: (id, arquivado = true) => api(card(id), { method: 'PATCH', body: { arquivado } }),
+}
+
+// Quadro: listas, membros e cards abertos (para criar tarefas) e criação de card.
+export const boardApi = {
+  options: (id) => api(`/quadros/${id}/edicao`),
+  createCard: (id, body) => api(`/quadros/${id}/cards`, { method: 'POST', body }),
 }
 
 const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms) })

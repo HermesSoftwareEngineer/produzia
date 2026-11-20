@@ -110,6 +110,9 @@ class TrelloClient:
     def update_card(self, card_id, fields):
         return self._send("PUT", f"/cards/{card_id}", fields)
 
+    def create_card(self, fields):
+        return self._send("POST", "/cards", fields)
+
     def add_member(self, card_id, member_id):
         return self._send("POST", f"/cards/{card_id}/idMembers", {"value": member_id})
 
