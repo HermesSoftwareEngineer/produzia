@@ -21,7 +21,8 @@ const BRIDGE = `
   var last = 0;
   function send() {
     var h = Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0));
-    if (h !== last) { last = h; parent.postMessage({ produziaFluxo: true, altura: h }, '*'); }
+    var w = Math.ceil(Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0));
+    if (h + '/' + w !== last) { last = h + '/' + w; parent.postMessage({ produziaFluxo: true, altura: h, largura: w }, '*'); }
   }
   addEventListener('load', send);
   addEventListener('resize', send);
@@ -36,8 +37,8 @@ const BRIDGE = `
 const FONT = '<link rel="preconnect" href="https://fonts.googleapis.com">'
   + '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">'
 
-export function buildHtmlDoc(code, theme) {
-  const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${FONT}<style>${BASE_CSS}</style>`
+export function buildHtmlDoc(code, theme, extraCss = '') {
+  const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${FONT}<style>${BASE_CSS}${extraCss}</style>`
   const bridge = `<script>${BRIDGE}</script>`
   const isDocument = /<html[\s>]/i.test(code)
   if (!isDocument) {

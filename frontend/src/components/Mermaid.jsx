@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTheme } from '../theme.jsx'
 import { Icon } from './ui.jsx'
 
@@ -7,9 +7,18 @@ let loader
 const loadMermaid = () => (loader ||= import('mermaid').then((m) => m.default))
 let seq = 0
 
-const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+const cssVar = (name, root = document.documentElement) => root.ownerDocument.defaultView
+  .getComputedStyle(root).getPropertyValue(name).trim()
 
-function themeVariables(dark) {
+/** Quando definido, os diagramas sao desenhados estaticos (sem barra) para impressao. */
+export const MermaidEnv = createContext(null)
+
+function themeVariables(dark, root) {
+  return themeVariablesFrom(dark, (name) => cssVar(name, root))
+}
+
+// `cssVar` aqui e o leitor ja preso ao documento certo (app ou impressao).
+function themeVariablesFrom(dark, cssVar) {
   return {
     darkMode: dark,
     background: cssVar('--surface'),
@@ -40,14 +49,23 @@ function themeVariables(dark) {
   }
 }
 
-async function renderSvg(code, theme) {
+// O mermaid e global (initialize + render): uma renderizacao por vez evita misturar temas.
+let queue = Promise.resolve()
+export function renderSvg(code, theme, root) {
+  const run = () => renderNow(code, theme, root)
+  const next = queue.then(run, run)
+  queue = next.catch(() => {})
+  return next
+}
+
+async function renderNow(code, theme, root = document.documentElement) {
   const mermaid = await loadMermaid()
   // Le as cores depois do await: o tema novo ja foi aplicado no <html>.
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
     theme: 'base',
-    themeVariables: themeVariables(theme === 'dark'),
+    themeVariables: themeVariables(theme === 'dark', root),
     // Rotulos em <text> (sem foreignObject) para a exportacao em PNG funcionar.
     htmlLabels: false,
     flowchart: { htmlLabels: false, curve: 'basis', padding: 12 },
@@ -56,7 +74,8 @@ async function renderSvg(code, theme) {
   try {
     await mermaid.parse(code)
     const { svg } = await mermaid.render(id, code)
-    return svg
+    // Com rotulos em <text>, o mermaid escapa duas vezes: "&gt;" aparecia literal no desenho.
+    return svg.replace(/&amp;(lt|gt|amp|quot|#39|#\d+);/g, '&$1;')
   } finally {
     document.getElementById(id)?.remove()
     document.getElementById(`d${id}`)?.remove()
@@ -145,7 +164,28 @@ function MermaidError({ error }) {
 }
 
 /** Desenho ajustado a largura; com toolbar mostra zoom, tela cheia e exportacao. */
-export default function MermaidDiagram({ code, name, toolbar = true, delay = 0 }) {
+export default function MermaidDiagram(props) {
+  const env = useContext(MermaidEnv)
+  return env ? <StaticMermaid code={props.code} env={env} /> : <InteractiveMermaid {...props} />
+}
+
+/** Versao para impressao: SVG fluido no tema claro, avisando quando terminou. */
+function StaticMermaid({ code, env }) {
+  const [svg, setSvg] = useState('')
+  const [error, setError] = useState(null)
+  useEffect(() => {
+    let alive = true
+    const job = renderSvg((code || '').trim(), 'light', env.root)
+      .then((s) => alive && setSvg(s))
+      .catch((e) => alive && setError(cleanError(e)))
+    env.track(job.then(() => new Promise((r) => requestAnimationFrame(() => r()))))
+    return () => { alive = false }
+  }, [code, env])
+  if (error) return <MermaidError error={error} />
+  return <div className="px-mmd" dangerouslySetInnerHTML={{ __html: svg }} />
+}
+
+function InteractiveMermaid({ code, name, toolbar = true, delay = 0 }) {
   const { svg, error, loading } = useMermaid(code, delay)
   const [zoom, setZoom] = useState(null) // null = ajustar
   const [full, setFull] = useState(false)

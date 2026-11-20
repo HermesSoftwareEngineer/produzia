@@ -5,6 +5,7 @@ import { useBoards } from '../boards.jsx'
 import MarkdownView from '../components/Markdown.jsx'
 import HtmlFlow from '../components/HtmlFlow.jsx'
 import MermaidDiagram from '../components/Mermaid.jsx'
+import { ExportPdfDialog } from '../components/ProcessPdf.jsx'
 import { Empty, ErrorBox, Icon, Loading } from '../components/ui.jsx'
 import { useLayout, useStoredFlag } from '../layout.jsx'
 import { MODELO_FLUXO_HTML } from '../fluxoModeloHtml.js'
@@ -85,7 +86,7 @@ export default function Processos() {
   useEffect(() => () => setFocus(false), [setFocus])
   useEffect(() => {
     if (!focus) return undefined
-    const onKey = (e) => { if (e.key === 'Escape' && !editing && !document.fullscreenElement && !document.querySelector('.mm-full')) setFocus(false) }
+    const onKey = (e) => { if (e.key === 'Escape' && !editing && !document.fullscreenElement && !document.querySelector('.mm-full, .px-overlay')) setFocus(false) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [focus, editing, setFocus])
@@ -279,6 +280,7 @@ function ProcessView({ p, mode, setMode, focus, onFocus, onEdit, onDelete }) {
     p.markdown && p.fluxograma && { key: 'side', icon: 'split', label: 'Lado a lado' },
   ].filter(Boolean)
   const current = modes.some((m) => m.key === mode) ? mode : modes[0].key
+  const [exporting, setExporting] = useState(false)
 
   return (
     <article className="pc-process">
@@ -299,6 +301,8 @@ function ProcessView({ p, mode, setMode, focus, onFocus, onEdit, onDelete }) {
             title={focus ? 'Restaurar (Esc)' : 'Maximizar: ocupar a janela inteira'} aria-pressed={focus}>
             <Icon name={focus ? 'fullscreenExit' : 'fullscreen'} />
           </button>
+          <button className="btn btn-ghost" type="button" onClick={() => setExporting(true)}
+            title="Exportar o documento, o fluxograma ou os dois em PDF"><Icon name="download" />PDF</button>
           <button className="btn btn-ghost" type="button" onClick={onEdit}><Icon name="edit" />Editar</button>
           <button className="btn btn-ghost btn-icon danger" type="button" title="Excluir" onClick={onDelete}><Icon name="trash" /></button>
         </div>
@@ -325,6 +329,9 @@ function ProcessView({ p, mode, setMode, focus, onFocus, onEdit, onDelete }) {
           </div>
         )}
       </div>
+      {exporting && (
+        <ExportPdfDialog p={p} initial={current === 'side' ? 'both' : current} onClose={() => setExporting(false)} />
+      )}
     </article>
   )
 }
