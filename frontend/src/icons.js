@@ -39,4 +39,8 @@ export const PATHS = {
   zoomOut: 'M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9M7 9h5v1H7z',
   upload: 'M5 20h14v-2H5zm4-4h6v-6h4l-7-7-7 7h4z',
   split: 'M3 5v14h18V5zm8 12H5V7h6zm8 0h-6V7h6z',
+  fullscreenExit: 'M5 16h3v3h2v-5H5zm3-8H5v2h5V5H8zm6 11h2v-3h3v-2h-5zm2-11V5h-2v5h5V8z',
+  // Menus laterais
+  dblLeft: 'M17.6 7.4 16.2 6l-6 6 6 6 1.4-1.4-4.6-4.6zm-6 0L10.2 6l-6 6 6 6 1.4-1.4L7 12z',
+  dblRight: 'M6.4 16.6 7.8 18l6-6-6-6-1.4 1.4 4.6 4.6zm6 0 1.4 1.4 6-6-6-6-1.4 1.4 4.6 4.6z',
 }

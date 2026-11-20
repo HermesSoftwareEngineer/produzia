@@ -1301,3 +1301,72 @@ body:has(.batch-bar.show) .toasts { bottom: 84px; }
 .gt-add:hover, .gt-add:focus-visible { color: var(--brand); background: var(--soft); }
 .gt-row-add .inline-edit { margin: 0; width: 100%; font-size: 12.5px; }
 .gt-wrap .gt-row-add { height: auto; min-height: 28px; }
+
+/* --- Menu lateral recolhivel e modo foco ------------------------------ */
+.sidebar { transition: width .18s ease, padding .18s ease; overflow-x: hidden; }
+.sidebar nav a span, .logout span, .side-toggle span, .brand span:last-child, .me-name { white-space: nowrap; }
+.side-toggle {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; margin-top: auto;
+  color: var(--side-ink); font: inherit; font-size: 13px; border: 0; background: none; cursor: pointer; width: 100%; text-align: left;
+}
+.side-toggle:hover { background: var(--side-2); color: #fff; }
+.side-toggle:focus-visible, .sidebar nav a:focus-visible, .logout:focus-visible { outline: 2px solid #2dd4bf; outline-offset: -2px; }
+.side-toggle + .me { margin-top: 0; }
+
+.nav-collapsed .sidebar { width: 64px; padding: 20px 10px; }
+.nav-collapsed .brand { padding: 0 0 22px 3px; }
+.nav-collapsed .brand span:last-child,
+.nav-collapsed .sidebar nav a span,
+.nav-collapsed .side-toggle span,
+.nav-collapsed .logout span,
+.nav-collapsed .me-name { display: none; }
+.nav-collapsed .sidebar nav a, .nav-collapsed .side-toggle, .nav-collapsed .logout { justify-content: center; padding: 10px 0; }
+.nav-collapsed .me { justify-content: center; padding: 8px 0; }
+.nav-collapsed .theme-switch { flex-direction: column; gap: 2px; }
+.nav-collapsed .theme-switch button { padding: 6px 0; }
+
+/* Modo foco: a pagina ocupa a janela inteira. */
+.focus-mode .sidebar, .focus-mode .topbar { display: none; }
+.focus-mode .content { padding: 20px 28px 40px; }
+.focus-mode .page { max-width: none; }
+
+@media (max-width: 860px) {
+  .side-toggle { display: none; }
+  .nav-collapsed .sidebar { width: auto; padding: 10px 16px; }
+  .nav-collapsed .theme-switch { flex-direction: row; }
+  .focus-mode .content { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+/* --- Processos: lista recolhivel e processo maximizado ---------------- */
+.pc-body { transition: grid-template-columns .18s ease; }
+.pc-list-top { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; position: sticky; top: 0; z-index: 1; background: var(--bg); }
+.pc-list-top .search { flex: 1; min-width: 0; margin-bottom: 0; }
+.pc-list-top .btn-icon { flex: none; color: var(--muted); }
+.pc-body.list-collapsed { grid-template-columns: 40px minmax(0, 1fr); gap: 24px; }
+.pc-rail {
+  position: sticky; top: 92px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+  border-right: 1px solid var(--line); padding-right: 6px; min-height: 200px;
+}
+.pc-rail .btn-icon { color: var(--muted); }
+.pc-rail-label {
+  writing-mode: vertical-rl; transform: rotate(180deg); display: inline-flex; align-items: center; gap: 8px;
+  border: 0; background: none; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted-2); cursor: pointer; padding: 8px 4px; border-radius: 8px;
+}
+.pc-rail-label:hover { color: var(--ink); background: var(--subtle); }
+.pc-rail-label .icon { width: 14px; height: 14px; transform: rotate(90deg); }
+
+.pc-focus .pc-head, .pc-focus .pc-list, .pc-focus .pc-rail { display: none; }
+.pc-focus .pc-body, .pc-focus .pc-body.list-collapsed { grid-template-columns: minmax(0, 1fr); }
+.pc-focus .pc-list + .pc-view, .pc-focus .pc-view { grid-column: 1 / -1; }
+.pc-focus .pc-side .pc-flow { top: 20px; }
+.pc-focus .pc-title p { max-width: none; }
+
+@media (max-width: 860px) {
+  .pc-body.list-collapsed { grid-template-columns: 1fr; gap: 12px; }
+  .pc-rail { position: static; flex-direction: row; min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 8px; }
+  .pc-rail-label { writing-mode: horizontal-tb; transform: none; }
+  .pc-rail-label .icon { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .pc-body { transition: none; } }

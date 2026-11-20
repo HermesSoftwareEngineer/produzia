@@ -6,6 +6,7 @@ import MarkdownView from '../components/Markdown.jsx'
 import HtmlFlow from '../components/HtmlFlow.jsx'
 import MermaidDiagram from '../components/Mermaid.jsx'
 import { Empty, ErrorBox, Icon, Loading } from '../components/ui.jsx'
+import { useLayout, useStoredFlag } from '../layout.jsx'
 import { MODELO_FLUXO_HTML } from '../fluxoModeloHtml.js'
 
 const KEY = 'produzia.processos.quadro'
@@ -77,6 +78,17 @@ export default function Processos() {
   const [editing, setEditing] = useState(null) // null | {} (novo) | processo
   const [version, setVersion] = useState(0)
   const selectedId = params.get('p')
+  const [listCollapsed, setListCollapsed] = useStoredFlag('produzia.processos.listaRecolhida')
+  const { focus, setFocus } = useLayout()
+
+  // Sai do modo foco ao trocar de página.
+  useEffect(() => () => setFocus(false), [setFocus])
+  useEffect(() => {
+    if (!focus) return undefined
+    const onKey = (e) => { if (e.key === 'Escape' && !editing && !document.fullscreenElement && !document.querySelector('.mm-full')) setFocus(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focus, editing, setFocus])
 
   const board = boards.some((b) => b.id === quadro) ? quadro : ''
   const setQuadro = (id) => {
@@ -156,7 +168,7 @@ export default function Processos() {
   const total = list?.length || 0
 
   return (
-    <div className="page pc">
+    <div className={`page pc ${focus ? 'pc-focus' : ''}`}>
       <div className="pc-head">
         <label className="pc-board">
           <Icon name="board" />
@@ -177,11 +189,28 @@ export default function Processos() {
       {list === null ? <Loading text="Carregando processos…" /> : !total ? (
         <EmptyState onCreate={() => setEditing({})} />
       ) : (
-        <div className="pc-body">
+        <div className={`pc-body ${listCollapsed ? 'list-collapsed' : ''}`}>
+          {listCollapsed ? (
+            <aside className="pc-rail">
+              <button className="btn btn-ghost btn-icon" type="button" title="Mostrar a lista de processos"
+                aria-expanded="false" onClick={() => setListCollapsed(false)}>
+                <Icon name="dblRight" />
+              </button>
+              <button className="pc-rail-label" type="button" onClick={() => setListCollapsed(false)}>
+                <Icon name="flow" />{total} {total === 1 ? 'processo' : 'processos'}
+              </button>
+            </aside>
+          ) : (
           <aside className="pc-list">
-            <div className="search">
+            <div className="pc-list-top">
+              <div className="search">
               <Icon name="search" />
               <input placeholder="Buscar processo" value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
+              <button className="btn btn-ghost btn-icon" type="button" title="Recolher a lista"
+                aria-expanded="true" onClick={() => setListCollapsed(true)}>
+                <Icon name="dblLeft" />
+              </button>
             </div>
             {!groups.length && <p className="feed-empty">Nada encontrado para “{search}”.</p>}
             {groups.map(([cat, items]) => (
@@ -205,10 +234,12 @@ export default function Processos() {
               </section>
             ))}
           </aside>
+          )}
 
           <section className="pc-view">
             {visible
               ? <ProcessView key={visible.id} p={visible} mode={mode} setMode={setMode}
+                  focus={focus} onFocus={() => setFocus(!focus)}
                   onEdit={() => setEditing(visible)} onDelete={() => remove(visible)} />
               : <Loading text="Abrindo processo…" />}
           </section>
@@ -241,7 +272,7 @@ function EmptyState({ onCreate }) {
   )
 }
 
-function ProcessView({ p, mode, setMode, onEdit, onDelete }) {
+function ProcessView({ p, mode, setMode, focus, onFocus, onEdit, onDelete }) {
   const modes = [
     p.markdown && { key: 'doc', icon: 'doc', label: 'Documento' },
     p.fluxograma && { key: 'flow', icon: 'flow', label: 'Fluxograma' },
@@ -264,6 +295,10 @@ function ProcessView({ p, mode, setMode, onEdit, onDelete }) {
           </div>
         </div>
         <div className="pc-actions">
+          <button className={`btn ${focus ? 'btn-primary' : 'btn-ghost'} btn-icon`} type="button" onClick={onFocus}
+            title={focus ? 'Restaurar (Esc)' : 'Maximizar: ocupar a janela inteira'} aria-pressed={focus}>
+            <Icon name={focus ? 'fullscreenExit' : 'fullscreen'} />
+          </button>
           <button className="btn btn-ghost" type="button" onClick={onEdit}><Icon name="edit" />Editar</button>
           <button className="btn btn-ghost btn-icon danger" type="button" title="Excluir" onClick={onDelete}><Icon name="trash" /></button>
         </div>

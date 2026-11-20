@@ -12,6 +12,7 @@ import Gantt from './pages/Gantt.jsx'
 import Login, { TrelloCallback } from './pages/Login.jsx'
 import Quadros from './pages/Quadros.jsx'
 import Resumo from './pages/Resumo.jsx'
+import { useLayout } from './layout.jsx'
 import { ThemeSwitch } from './theme.jsx'
 
 // Markdown e Mermaid so carregam quando a pagina de processos abre.
@@ -21,6 +22,15 @@ const TITLES = {
   '/': 'Dashboard', '/resumo': 'Resumo do dia', '/calendario': 'Calendário',
   '/gantt': 'Cronograma', '/processos': 'Processos', '/quadros': 'Quadros',
 }
+
+const NAV = [
+  { to: '/', icon: 'dashboard', label: 'Dashboard' },
+  { to: '/resumo', icon: 'calendar', label: 'Resumo do dia' },
+  { to: '/calendario', icon: 'calgrid', label: 'Calendário' },
+  { to: '/gantt', icon: 'gantt', label: 'Cronograma' },
+  { to: '/processos', icon: 'flow', label: 'Processos' },
+  { to: '/quadros', icon: 'board', label: 'Quadros' },
+]
 
 export default function App() {
   const [user, setUser] = useState(undefined)
@@ -59,6 +69,7 @@ function Shell({ user, onLogout }) {
   const navigate = useNavigate()
   const { refresh } = useBoards()
   const [refreshing, setRefreshing] = useState(false)
+  const { navCollapsed, setNavCollapsed, focus } = useLayout()
 
   useEffect(() => {
     document.title = `${TITLES[location.pathname] || 'Produzia'} · Produzia`
@@ -82,18 +93,21 @@ function Shell({ user, onLogout }) {
   const showBoardFilter = showFilter && location.pathname !== '/gantt'
 
   return (
-    <div className="shell">
+    <div className={`shell ${navCollapsed ? 'nav-collapsed' : ''} ${focus ? 'focus-mode' : ''}`}>
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark"><Icon name="bars" /></span><span>Produzia</span></div>
+        <div className="brand" title="Produzia"><span className="brand-mark"><Icon name="bars" /></span><span>Produzia</span></div>
         <nav>
-          <NavLink to="/" end><Icon name="dashboard" /><span>Dashboard</span></NavLink>
-          <NavLink to="/resumo"><Icon name="calendar" /><span>Resumo do dia</span></NavLink>
-          <NavLink to="/calendario"><Icon name="calgrid" /><span>Calendário</span></NavLink>
-          <NavLink to="/gantt"><Icon name="gantt" /><span>Cronograma</span></NavLink>
-          <NavLink to="/processos"><Icon name="flow" /><span>Processos</span></NavLink>
-          <NavLink to="/quadros"><Icon name="board" /><span>Quadros</span></NavLink>
+          {NAV.map((n) => (
+            <NavLink key={n.to} to={n.to} end={n.to === '/'} title={navCollapsed ? n.label : undefined}>
+              <Icon name={n.icon} /><span>{n.label}</span>
+            </NavLink>
+          ))}
         </nav>
-        <div className="me" title={user.admin ? 'Administrador: vê todos os quadros' : `@${user.username || ''}`}>
+        <button className="side-toggle" type="button" onClick={() => setNavCollapsed((v) => !v)}
+          title={`${navCollapsed ? 'Expandir' : 'Recolher'} menu (Ctrl+B)`} aria-expanded={!navCollapsed}>
+          <Icon name={navCollapsed ? 'dblRight' : 'dblLeft'} /><span>Recolher menu</span>
+        </button>
+        <div className="me" title={user.admin ? `${user.nome} · Administrador: vê todos os quadros` : `${user.nome} · @${user.username || ''}`}>
           <Avatar pessoa={user} size={28} />
           <span className="me-name">
             <strong>{user.nome}</strong>
@@ -101,7 +115,7 @@ function Shell({ user, onLogout }) {
           </span>
         </div>
         <ThemeSwitch />
-        <button className="logout" type="button" onClick={logout}><Icon name="logout" /><span>Sair</span></button>
+        <button className="logout" type="button" onClick={logout} title={navCollapsed ? 'Sair' : undefined}><Icon name="logout" /><span>Sair</span></button>
       </aside>
       <div className="main">
         <header className="topbar">
